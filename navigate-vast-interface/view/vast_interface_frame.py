@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 
 
-class PluginNameFrame(ttk.Frame):
+class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
 
     This frame contains the widgets for the plugin.
