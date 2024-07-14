@@ -1,9 +1,11 @@
 # Standard Imports
 import os
+import platform
 from pathlib import Path
 
 from navigate.tools.common_functions import load_module_from_file
-from navigate.model.device_startup_functions import device_not_found, auto_redial
+from navigate.model.device_startup_functions import device_not_found, auto_redial, DummyDeviceConnection
+from navigate.model.devices.stages.stage_synthetic import SyntheticStage
 
 DEVICE_TYPE_NAME = "stage"  # Same as in configuraion.yaml, for example "stage", "filter_wheel", "remote_focus_device"...
 DEVICE_REF_LIST = ["type", "axes", "serial_number", "axes_mapping"]  # the reference value from configuration.yaml
@@ -22,8 +24,22 @@ def load_device(hardware_configuration, is_synthetic=False, **kwargs):
     -------
     device_connection : object
     """
-    return type("DeviceConnection", (object,), {})
 
+    if is_synthetic:
+        stage_type = "SyntheticStage"
+    else:
+        stage_type = hardware_configuration["type"]
+
+    if stage_type == "VAST" and platform.system() == "Windows":
+        from model.devices.stages.stage_vast import build_VAST_connection
+
+        return auto_redial(
+            build_VAST_connection,
+            (),
+            exception=Exception,
+        )
+    else:
+        return DummyDeviceConnection
 
 def start_device(microscope_name, device_connection, configuration, is_synthetic=False, **kwargs):
     """Start device.
@@ -52,15 +68,23 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
 
     if device_type == "VAST":
         plugin_device = load_module_from_file(
-            "plugin_device",
-            os.path.join(Path(__file__).resolve().parent, "plugin_device.py"),
+            "stage_vast",
+            os.path.join(Path(__file__).resolve().parent, "stage_vast.py"),
         )
-        return plugin_device.PluginDevice(device_connection=device_connection)
+        return plugin_device.VASTStage(
+            microscope_name, 
+            device_connection, 
+            configuration,
+            id=kwargs['id']
+            )
+    
     elif device_type == "synthetic":
-        synthetic_device = load_module_from_file(
-            "synthetic_device",
-            os.path.join(Path(__file__).resolve().parent, "synthetic_device.py"),
+        return SyntheticStage(
+            microscope_name,
+            device_connection,
+            configuration,
+            id=kwargs['id']
         )
-        return synthetic_device.SyntheticDevice(device_connection=device_connection)
+    
     else:
         return device_not_found(microscope_name, device_type)
