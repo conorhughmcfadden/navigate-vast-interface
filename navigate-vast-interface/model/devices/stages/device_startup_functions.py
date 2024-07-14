@@ -31,10 +31,13 @@ def load_device(hardware_configuration, is_synthetic=False, **kwargs):
         stage_type = hardware_configuration["type"]
 
     if stage_type == "VAST" and platform.system() == "Windows":
-        from model.devices.stages.stage_vast import build_VAST_connection
+        plugin_device = load_module_from_file(
+            "stage_vast",
+            os.path.join(Path(__file__).resolve().parent, "stage_vast.py"),
+        )
 
         return auto_redial(
-            build_VAST_connection,
+            plugin_device.build_VAST_connection,
             (),
             exception=Exception,
         )

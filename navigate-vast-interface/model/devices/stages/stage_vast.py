@@ -30,6 +30,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 # Standard Imports
+import os
+import pathlib
 import logging
 import time
 
@@ -37,16 +39,16 @@ import time
 
 # Navigate Imports
 from navigate.model.devices.stages.stage_base import StageBase
-
-# Local plugin imports
-from model.devices.APIs.vast.vast_controller import VASTController
+from navigate.tools.common_functions import load_module_from_file
 
 # Logger Setup
-p = __name__.split(".")[1]
-logger = logging.getLogger(p)
+# p = __name__.split(".")[1]
+# logger = logging.getLogger(p)
+"""
+    Not sure how to handle logger in a plugin...
+"""
 
-
-def build_VAST_connection() -> VASTController:
+def build_VAST_connection() -> object:
     """Connect to the ASI Stage
 
     Parameters
@@ -62,8 +64,18 @@ def build_VAST_connection() -> VASTController:
         Successfully initialized stage object.
     """
 
+    # Need to load the VAST API using load_module_from_file...
+    vast_api = load_module_from_file(
+        'vast_controller',
+        os.path.join(
+            pathlib.Path(__file__).resolve().parent.parent,
+            'APIs',
+            'vast'
+        )
+    )
+
     # load the VAST connection through the pipe
-    vast_controller = VASTController()
+    vast_controller = vast_api.VASTController()
     vast_controller.start_vast()
 
     # n_iters = 45
@@ -147,10 +159,10 @@ class VASTStage(StageBase):
                 self.__setattr__(f"{axis}_pos", hardware_position)
 
             position = self.get_position_dict()
-            logger.debug(f"VAST - Position: {position}")
+            # logger.debug(f"VAST - Position: {position}")
         except Exception as e:
             print(f"VAST: Failed to report position: {e}")
-            logger.debug(f"VAST - Error: {e}")
+            # logger.debug(f"VAST - Error: {e}")
             time.sleep(0.01)
 
         return position
@@ -233,7 +245,7 @@ class VASTStage(StageBase):
                     theta_pos=self.stage_theta_pos,
                 )
             except Exception as e:
-                logger.debug(f"VAST: move_axis_absolute failed - {e}")
+                # logger.debug(f"VAST: move_axis_absolute failed - {e}")
                 # make sure the cached positions are the "same" as device
                 self.report_position()
                 return False
@@ -245,7 +257,7 @@ class VASTStage(StageBase):
         # try:
         #     self.stage.interrupt_move()
         # except Exception as error:
-        #     logger.exception(f"VAST - Stage stop failed: {error}")
+        #     # logger.exception(f"VAST - Stage stop failed: {error}")
         pass
         # May not be able to do this with VAST..?
 
@@ -255,7 +267,7 @@ class VASTStage(StageBase):
         try:
             self.stop()
             self.stage.close()
-            logger.debug("VAST stage connection closed")
+            # logger.debug("VAST stage connection closed")
         except (AttributeError, BaseException) as e:
             print("Error while closing the VAST stage connection", e)
-            logger.debug("Error while disconnecting the VAST stage", e)
+            # logger.debug("Error while disconnecting the VAST stage", e)
