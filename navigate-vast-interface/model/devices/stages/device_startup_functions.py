@@ -3,12 +3,12 @@ import os
 from pathlib import Path
 
 from navigate.tools.common_functions import load_module_from_file
-from navigate.model.device_startup_functions import device_not_found
+from navigate.model.device_startup_functions import device_not_found, auto_redial
 
 DEVICE_TYPE_NAME = "stage"  # Same as in configuraion.yaml, for example "stage", "filter_wheel", "remote_focus_device"...
 DEVICE_REF_LIST = ["type", "axes", "serial_number", "axes_mapping"]  # the reference value from configuration.yaml
 
-def load_device(hardware_configuration, is_synthetic=False):
+def load_device(hardware_configuration, is_synthetic=False, **kwargs):
     """Build device connection.
 
     Parameters
@@ -25,7 +25,7 @@ def load_device(hardware_configuration, is_synthetic=False):
     return type("DeviceConnection", (object,), {})
 
 
-def start_device(microscope_name, device_connection, configuration, is_synthetic=False):
+def start_device(microscope_name, device_connection, configuration, is_synthetic=False, **kwargs):
     """Start device.
 
     Parameters
@@ -47,10 +47,10 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
         device_type = "synthetic"
     else:
         device_type = configuration["configuration"]["microscopes"][microscope_name][
-            "plugin_device"
+            DEVICE_TYPE_NAME
         ]["hardware"]["type"]
 
-    if device_type == "PluginDevice":
+    if device_type == "VAST":
         plugin_device = load_module_from_file(
             "plugin_device",
             os.path.join(Path(__file__).resolve().parent, "plugin_device.py"),
