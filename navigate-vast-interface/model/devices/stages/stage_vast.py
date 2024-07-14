@@ -70,7 +70,8 @@ def build_VAST_connection() -> object:
         os.path.join(
             pathlib.Path(__file__).resolve().parent.parent,
             'APIs',
-            'vast'
+            'vast',
+            'vast_controller.py'
         )
     )
 

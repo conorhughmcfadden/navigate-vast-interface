@@ -2,7 +2,9 @@
 import os
 import platform
 from pathlib import Path
+from multiprocessing.managers import ListProxy
 
+# Navigate specific imports
 from navigate.tools.common_functions import load_module_from_file
 from navigate.model.device_startup_functions import device_not_found, auto_redial, DummyDeviceConnection
 from navigate.model.devices.stages.stage_synthetic import SyntheticStage
@@ -62,12 +64,15 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
     -------
     device_object : object
     """
+    id = kwargs['id']
+
+    device_config = configuration["configuration"]["microscopes"][microscope_name][DEVICE_TYPE_NAME]["hardware"]
     if is_synthetic:
         device_type = "synthetic"
+    elif type(device_config) == ListProxy:
+        device_type = device_config[id]["type"]
     else:
-        device_type = configuration["configuration"]["microscopes"][microscope_name][
-            DEVICE_TYPE_NAME
-        ]["hardware"]["type"]
+        device_type = device_config["type"]
 
     if device_type == "VAST":
         plugin_device = load_module_from_file(
@@ -78,7 +83,7 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
             microscope_name, 
             device_connection, 
             configuration,
-            id=kwargs['id']
+            id
             )
     
     elif device_type == "synthetic":
@@ -86,7 +91,7 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
             microscope_name,
             device_connection,
             configuration,
-            id=kwargs['id']
+            id
         )
     
     else:
