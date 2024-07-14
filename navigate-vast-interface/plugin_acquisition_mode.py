@@ -1,6 +1,6 @@
 from navigate.tools.decorators import AcquisitionMode
 from navigate.model.features.feature_related_functions import (
-    ExampleFeature,
+    VastAnnotator,
 )
 
 
@@ -9,7 +9,7 @@ class PluginAcquisitionMode:
     def __init__(self, name):
         self.acquisition_mode = name
 
-        self.feature_list = [{"name": ExampleFeature}]
+        self.feature_list = [{"name": VastAnnotator}]
 
     def prepare_acquisition_controller(self, controller):
         """Controller side preparation before acquisition

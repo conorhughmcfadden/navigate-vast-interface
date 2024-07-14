@@ -1,4 +1,4 @@
-name: Plugin Name
+name: VAST Interface
 view: Popup # Tab or Popup if has an GUI
 
 acquisition_modes: 

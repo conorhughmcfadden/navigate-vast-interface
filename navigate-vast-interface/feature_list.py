@@ -1,11 +1,12 @@
 from navigate.tools.decorators import FeatureList
 from navigate.model.features.feature_related_functions import (
-    ExampleFeature,
+    VastAnnotator,
 )
 
 
 @FeatureList
-def example_feature():
+
+def vast_annotator():
     return [
-        {"name": ExampleFeature},
+        {"name": VastAnnotator},
     ]
