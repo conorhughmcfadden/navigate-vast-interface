@@ -119,6 +119,9 @@ class VASTController:
             int(y_um * VASTController.UM_TO_US)
         )
     
+    def continue_operation(self):
+        self.send('cont')
+
     def wait(self):
         busy_status = 1 # anything but zero
         itr = 0

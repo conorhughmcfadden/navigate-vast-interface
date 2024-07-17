@@ -2,6 +2,8 @@ class VastAnnotator:
     def __init__(self, model, *args):
         self.model = model
 
+        ##self.vast_controller = self.model.active_microscope --  glitched on attempting, but is *the* way to use a controller via a feature, which I believe is all we'd need
+
         self.config_table = {
             "signal": {
                 "init": self.pre_func_signal,
