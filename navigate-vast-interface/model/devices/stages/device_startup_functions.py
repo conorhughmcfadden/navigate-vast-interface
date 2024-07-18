@@ -7,7 +7,7 @@ from multiprocessing.managers import ListProxy
 # Navigate specific imports
 from navigate.tools.common_functions import load_module_from_file
 from navigate.model.device_startup_functions import device_not_found, auto_redial, DummyDeviceConnection
-from navigate.model.devices.stages.stage_synthetic import SyntheticStage
+from navigate.model.devices.stages.synthetic import SyntheticStage
 
 DEVICE_TYPE_NAME = "stage"  # Same as in configuraion.yaml, for example "stage", "filter_wheel", "remote_focus_device"...
 DEVICE_REF_LIST = ["type", "axes", "serial_number", "axes_mapping"]  # the reference value from configuration.yaml
@@ -34,8 +34,8 @@ def load_device(hardware_configuration, is_synthetic=False, **kwargs):
 
     if stage_type == "VAST" and platform.system() == "Windows":
         plugin_device = load_module_from_file(
-            "stage_vast",
-            os.path.join(Path(__file__).resolve().parent, "stage_vast.py"),
+            "vast",
+            os.path.join(Path(__file__).resolve().parent, "vast.py"),
         )
 
         return auto_redial(
@@ -76,8 +76,8 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
 
     if device_type == "VAST":
         plugin_device = load_module_from_file(
-            "stage_vast",
-            os.path.join(Path(__file__).resolve().parent, "stage_vast.py"),
+            "vast",
+            os.path.join(Path(__file__).resolve().parent, "vast.py"),
         )
         return plugin_device.VASTStage(
             microscope_name, 

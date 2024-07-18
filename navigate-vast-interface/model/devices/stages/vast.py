@@ -38,7 +38,7 @@ import time
 # Third Party Imports
 
 # Navigate Imports
-from navigate.model.devices.stages.stage_base import StageBase
+from navigate.model.devices.stages.base import StageBase
 from navigate.tools.common_functions import load_module_from_file
 
 # Logger Setup
