@@ -216,7 +216,7 @@ class VASTStage(StageBase):
         # rely on cached positions
         # if len(pos_dict.keys()) < 3:
         #     self.report_position()
-        self.stage.wait_until_done = wait_until_done # This does nothing...
+        self.stage.wait_until_done = wait_until_done
 
         move_stage = {}
         for axis in pos_dict:
