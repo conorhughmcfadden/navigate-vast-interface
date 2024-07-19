@@ -127,7 +127,8 @@ class VASTController:
         itr = 0
         while busy_status:
             busy_status = self.check_motors_busy_status()
-            # print(f"Waiting {itr}:\t{busy_status}")
+            print(f"Waiting {itr}:\t{busy_status}")
+            itr += 1
             time.sleep(0.01)
 
     def check_motors_busy_status(self):
@@ -136,12 +137,12 @@ class VASTController:
 
     def move_to_specified_position(self, x_pos=0.0, y_pos=0.0, theta_pos=0.0):
 
-        print("\nvast_controller/move_to_specified_position: BEGIN")
-        print(f"\ttheta_pos = {(theta_pos)}")
-        print(f"\tself.theta_pos = {(self.theta_pos)}")
-        print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
+        # print("\nvast_controller/move_to_specified_position: BEGIN")
+        # print(f"\ttheta_pos = {(theta_pos)}")
+        # print(f"\tself.theta_pos = {(self.theta_pos)}")
+        # print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
 
-        print("\n---- SEND MOVE COMMAND ----")
+        # print("\n---- SEND MOVE COMMAND ----")
         # Move the stage first
         # self.move_abs_um(x_um=x_pos, y_um=y_pos)
         # Perform relative move in (x,y). Seems to work better for the x-axis.
@@ -154,8 +155,8 @@ class VASTController:
         if theta_pos != self.theta_pos:
             self.rotate_deg(theta=(theta_pos - self.theta_pos))
 
-        print("\nvast_controller/move_to_specified_position: END")
-        print(f"\ttheta_pos = {(theta_pos)}")
-        print(f"\tself.theta_pos = {(self.theta_pos)}")
-        print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
+        # print("\nvast_controller/move_to_specified_position: END")
+        # print(f"\ttheta_pos = {(theta_pos)}")
+        # print(f"\tself.theta_pos = {(self.theta_pos)}")
+        # print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
         
