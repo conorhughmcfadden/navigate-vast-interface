@@ -10,7 +10,7 @@ class VASTController:
     DEG_TO_US = 1 / 0.72
 
     def __init__(self):
-        self.holster = "C:\\Users\\mesoO\\Documents\\TestAutoSampIntegration\\bin\\Debug\\TestAutoSampIntegration.exe"
+        self.holster = "C:\\Users\\vastopmv3\\Documents\\TestAutoSampIntegration\\bin\\Debug\\TestAutoSampIntegration.exe"
         self.f = None
         self.vast_process = subprocess.Popen(self.holster)
 
