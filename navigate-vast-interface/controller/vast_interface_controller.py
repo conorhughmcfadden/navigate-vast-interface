@@ -17,7 +17,7 @@ class VastInterfaceController:
     def __init__(self, view, parent_controller=None):
         self.view = view
         self.parent_controller = parent_controller
-        
+
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
         self.buttons = self.view.buttons
@@ -26,7 +26,7 @@ class VastInterfaceController:
 
         # variables
         self.perspective = 0
-        self.coord = [0, 0, 0]
+        self.coord = [0, 0, 0, 0, 0] # (x,y,z,theta,f)
         self.coords_list = []
         self.x_pos = 0
         self.y_pos = 0
@@ -116,8 +116,12 @@ class VastInterfaceController:
                 self.coord[2] = self.y_pos
                 self.coords_list += [deepcopy(self.coord)]
                 self.perspective = 0
+                self.update_multiposition_controller(self.coords_list)
 
             self.draw_fish()
+
+    def update_multiposition_controller(self, positions=[[]]):
+        self.parent_controller.multiposition_tab_controller.set_positions(positions)
 
     def update_vast_imagefolder(self, *args):
         """Update autostore path for the VAST
