@@ -13,6 +13,15 @@ from navigate.view.custom_widgets.validation import ValidatedSpinbox, ValidatedC
 from navigate.view.custom_widgets.LabelInputWidgetFactory import LabelInput
 
 
+class FishWidget:
+
+    def __init__(self, master):
+
+        self.fig = Figure(figsize=(15,6))
+        self.ax = self.fig.add_subplot()
+        self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
+        self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
+
 class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
 
@@ -47,46 +56,40 @@ class VastInterfaceFrame(ttk.Frame):
         # ######## Example Widgets ########
         # ##### add your widgets here #####
         # #################################
-        label = ttk.Label(self, text="Plugin Name:")
-        label.grid(row=0, column=0, sticky=tk.NW)
+        self.fish_widget = FishWidget(self)
+        self.fish_widget.canvas.get_tk_widget().pack()
+        
+        self.inputs['fish_widget'] = self.fish_widget
 
-        self.variables["plugin_name"] = tk.StringVar(self)
-        self.inputs["plugin_name"] = ttk.Entry(
-            self, textvariable=self.variables["plugin_name"]
-        )
-        self.inputs["plugin_name"].grid(
-            row=0, column=1, sticky="N", padx=5, pady=(0, 5)
-        )
+        # label = ttk.Label(self, text="VAST Interface")
+        # label.grid(row=0, column=0, sticky=tk.NW)
 
-        self.buttons["move"] = ttk.Button(self, text="MOVE1")
-        self.buttons["move"].grid(row=1, column=1, sticky="N", padx=6)
+        # self.variables["plugin_name"] = tk.StringVar(self)
+        # self.inputs["plugin_name"] = ttk.Entry(
+        #     self, textvariable=self.variables["plugin_name"]
+        # )
+        # self.inputs["plugin_name"].grid(
+        #     row=0, column=1, sticky="N", padx=5, pady=(0, 5)
+        # )
+
+        # self.buttons["move"] = ttk.Button(self, text="MOVE1")
+        # self.buttons["move"].grid(row=1, column=1, sticky="N", padx=6)
         
         
-        self.inputs["VASTsavedir"] = LabelInput(
-            self,
-            input_class=ttk.Entry,
-            input_var=tk.StringVar()
-        )
+        # self.inputs["VASTsavedir"] = LabelInput(
+        #     self,
+        #     input_class=ttk.Entry,
+        #     input_var=tk.StringVar()
+        # )
 
-        self.DorsalImage = tk.Canvas(self,
-            height = 200,
-            width = 2048,
-            bd = 10,
-            highlightthickness = 10,
-            relief = "ridge")
-        self.DorsalImage.create_oval(-50,50,-50,50)
-        self.DorsalImage.place(x = 0, y = 0)
 
         
         #Image path selection
-        self.buttons["vast_storage_dir"] = HoverButton(
-            self, text="Select Image Save Folder "
-        )
-        self.buttons["vast_storage_dir"].grid(row=3, column=1, sticky="N", pady=2, padx=(6, 0))
-        #Button for Initialization   
-        self.buttons["move_VAST"] = HoverButton(
-            self, text="Initialize LPS+VAST"
-        )
+        # self.buttons["vast_storage_dir"] = HoverButton(
+        #     self, text="Select Image Save Folder "
+        # )
+        # self.buttons["vast_storage_dir"].grid(row=3, column=1, sticky="N", pady=2, padx=(6, 0))
+        
     # Getters
     def get_variables(self):
         """Returns a dictionary of the variables for the widgets in this frame.
