@@ -1,7 +1,9 @@
 # Standard library imports
 import os
+import numpy as np
 import tkinter as tk
 from tkinter import filedialog
+from copy import deepcopy
 
 # Third party imports
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -79,6 +81,9 @@ class VastInterfaceController:
         self.fish_widget.ax.set_ylim(0, self.l)
 
         # display selected points
+        if len(self.coords_list) > 0:
+            c = np.array(self.coords_list)
+            self.fish_widget.ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
 
         # set up canvas
         self.fish_widget.canvas.draw()
@@ -87,10 +92,32 @@ class VastInterfaceController:
         )
 
     def move_crosshair(self, event):
-        pass
+        # create the new data    
+        if self.perspective == 0:
+            self.x_pos = event.xdata
+        self.y_pos = event.ydata
+        self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
+        self.fish_widget.lines[1].set_data([0, self.w], [self.y_pos]*2)
+
+        # blit new data into old frame
+        self.fish_widget.canvas.restore_region(self.background)
+        for l in self.fish_widget.lines:
+            self.fish_widget.ax.draw_artist(l)
+        self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
+        self.fish_widget.canvas.flush_events()
 
     def on_click(self, event):
-        pass
+        if event.button == 1:          
+            if self.perspective == 0:
+                self.coord[0] = self.x_pos
+                self.coord[1] = self.y_pos
+                self.perspective = 1
+            elif self.perspective == 1:
+                self.coord[2] = self.y_pos
+                self.coords_list += [deepcopy(self.coord)]
+                self.perspective = 0
+
+            self.draw_fish()
 
     def update_vast_imagefolder(self, *args):
         """Update autostore path for the VAST
