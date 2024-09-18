@@ -30,7 +30,8 @@ class VastAnnotator:
 
     def in_func_signal(self):
         """set devices before snaping an image"""
-
+        pass
+    
     def end_func_signal(self):
         """decide if this feature ends after snaping an image"""
         pass
