@@ -9,15 +9,21 @@ from copy import deepcopy
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tifffile import tifffile
+from skimage.exposure import adjust_gamma
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
 
-class VastInterfaceController:
-    def __init__(self, view, parent_controller=None):
-        self.view = view
-        self.parent_controller = parent_controller
+# print(os.path.split(__file__)[-1].split('.')[0])
 
+class VastInterfaceController(GUIController):
+
+    def __init__(self, view, parent_controller=None):
+        super().__init__(view, parent_controller)
+
+        self.initialize()
+
+    def initialize(self):
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
         self.buttons = self.view.buttons
@@ -42,11 +48,7 @@ class VastInterfaceController:
         # draw the fish widget
         self.draw_fish()
 
-        # #################################
-        # ##### Example Widget Events #####
-        # #################################
-        # self.buttons["vast_storage_dir"].configure(command=self.update_vast_imagefolder)
-
+        # widget events
         self.fish_widget.fig.canvas.mpl_connect(
             'motion_notify_event',
             self.move_crosshair
@@ -72,7 +74,7 @@ class VastInterfaceController:
 
         # initialize plot
         self.fish_widget.ax.imshow(
-            self.images[self.perspective],
+            adjust_gamma(self.images[self.perspective], 0.5),
             cmap='gray'
         )
 
@@ -123,31 +125,7 @@ class VastInterfaceController:
     def update_multiposition_controller(self, positions=[[]]):
         self.parent_controller.multiposition_tab_controller.set_positions(positions)
 
-    def update_vast_imagefolder(self, *args):
-        """Update autostore path for the VAST
-
-
-        Parameters
-        ----------
-        *args
-            Not used
-
-
-        Examples
-        --------
-        self.update_vast_imagefolder()
-        """
-        print(self.widgets["VASTsavedir"].get())
-        vast_storage_dir = tk.StringVar()
-        vast_storage_dir = filedialog.askdirectory(initialdir=self.widgets["VASTsavedir"].get())
-        #self.vast_operator_vals["vast_image_folder"].set(vast_storage_dir)
-        self.widgets["VASTsavedir"].set(vast_storage_dir)
-        print(self.widgets["VASTsavedir"].get())
-    
-    def move(self, *args):
-        """Example function to move the plugin device
-        """
-
-        print("*** Move button is clicked!")
-        self.parent_controller.execute("move_plugin_device", self.variables["plugin_name"].get())
-
+    @property
+    def custom_events(self):
+        """Custom events for the controller"""
+        return {}
