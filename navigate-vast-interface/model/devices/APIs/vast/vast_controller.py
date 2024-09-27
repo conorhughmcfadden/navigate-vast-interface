@@ -11,7 +11,7 @@ class VASTController:
 
     def __init__(
             self,
-            holster = "C:\\Users\\vastopmv3\\Documents\\TestAutoSampIntegration\\bin\\Debug\\TestAutoSampIntegration.exe",
+            holster = "c:\\Users\\vastopmv3\\Documents\\NET\\Projects\\VastNavigateServer\\bin\\Debug\\VastNavigateServer.exe",
         ):
         self.holster = holster
         self.f = None
