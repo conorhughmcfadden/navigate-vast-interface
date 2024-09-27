@@ -1,57 +1,35 @@
+import time
+
 class VastAnnotator:
     def __init__(self, model, *args):
         self.model = model
 
-        ##self.vast_controller = self.model.active_microscope --  glitched on attempting, but is *the* way to use a controller via a feature, which I believe is all we'd need
-
         self.config_table = {
             "signal": {
-                "init": self.pre_func_signal,
-                "main": self.in_func_signal,
-                "end": self.end_func_signal,
-                "cleanup": self.cleanup_func_signal,
-            },
-            "data": {
-                "init": self.pre_func_data,
-                "main": self.in_func_data,
-                "end": self.end_func_data,
-                "cleanup": self.cleanup_func_data,
+                "main": self.signal_func,
             },
             "node": {
-                "node_type": "multi-step",  # "multi-step" or "one-step"
-                "device_related": True,  # True or False
-                "need_response": True,  # True or False
-            },
+                "need_response": False
+            }
         }
 
-    def pre_func_signal(self):
-        """Prepare device thread to run this feature"""
-        pass
+    def vast_status(self):
+        return self.model.configuration["experiment"]["VASTAnnotatorStatus"]
 
-    def in_func_signal(self):
-        """set devices before snaping an image"""
-        pass
-    
-    def end_func_signal(self):
-        """decide if this feature ends after snaping an image"""
-        pass
+    def signal_func(self):
+        # build the vast annotator popup window
+        self.model.event_queue.put(
+            ("build_vast_popup", [])
+        )
 
-    def pre_func_data(self):
-        """Prepare data thread to run this feature"""
-        pass
+        # need to wait for vast_interface_controller to be initialized
+        while True:
+            try:
+                if self.vast_status():
+                    break
+            except:
+                time.sleep(0.1)
 
-    def in_func_data(self, frame_ids):
-        """Deal with images"""
-        pass
-
-    def end_func_data(self):
-        """Decide if this feature ends"""
-        pass
-
-    def cleanup_func_signal(self):
-        """Cleanup"""
-        pass
-
-    def cleanup_func_data(self):
-        """Cleanup"""
-        pass
+        # wait while user selects points (finish on close)
+        while self.vast_status():
+            time.sleep(0.1)

@@ -17,7 +17,7 @@ class FishWidget:
 
     def __init__(self, master):
 
-        self.fig = Figure(figsize=(15,6))
+        self.fig = Figure(figsize=(10,4))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)

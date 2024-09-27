@@ -1,5 +1,6 @@
 # Standard library imports
 import os
+from pathlib import Path
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog
@@ -13,15 +14,21 @@ from skimage.exposure import adjust_gamma
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
-
-# print(os.path.split(__file__)[-1].split('.')[0])
+from navigate.tools.file_functions import load_yaml_file
 
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller=None):
         super().__init__(view, parent_controller)
 
+        # get plugin name to call events from parent_controller
+        config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
+        plugin_config = load_yaml_file(config_path)
+        self.plugin_name = plugin_config['name']
+
         self.initialize()
+
+        self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = True
 
     def initialize(self):
         self.variables = self.view.get_variables()
@@ -59,6 +66,15 @@ class VastInterfaceController(GUIController):
             self.on_click
         )
 
+    def close(self):
+        self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = False
+
+    def update_experiment_values(self):
+        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.coords_list
+        self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
+            "multiposition_count"
+        ] = len(self.coords_list)
+
     def load_image(self, dir="C:/Users/vastopmv3/Documents/Python/Fish/Well_A04/", chan="Yl-led615", view=1, slice=5):
         im_path = os.path.join(
             dir,
@@ -74,7 +90,7 @@ class VastInterfaceController(GUIController):
 
         # initialize plot
         self.fish_widget.ax.imshow(
-            adjust_gamma(self.images[self.perspective], 0.5),
+            adjust_gamma(self.images[self.perspective], 0.3),
             cmap='gray'
         )
 
@@ -124,8 +140,19 @@ class VastInterfaceController(GUIController):
 
     def update_multiposition_controller(self, positions=[[]]):
         self.parent_controller.multiposition_tab_controller.set_positions(positions)
+        self.update_experiment_values()
+
+    def build_vast_popup(self, event):
+        print(f"Event = {event}")
+        try:
+            self.parent_controller.plugin_controller.popup_funcs[self.plugin_name]()
+        except Exception as e:
+            print(e)
 
     @property
     def custom_events(self):
         """Custom events for the controller"""
-        return {}
+        return {
+            "build_vast_popup": self.build_vast_popup,
+            "close": self.close
+        }
