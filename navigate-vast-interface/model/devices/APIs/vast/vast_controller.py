@@ -9,11 +9,14 @@ class VASTController:
     UM_TO_US = 21.33333
     DEG_TO_US = 1 / 0.72
 
-    def __init__(self):
-        self.holster = "C:\\Users\\vastopmv3\\Documents\\TestAutoSampIntegration\\bin\\Debug\\TestAutoSampIntegration.exe"
+    def __init__(
+            self,
+            holster = "C:\\Users\\vastopmv3\\Documents\\TestAutoSampIntegration\\bin\\Debug\\TestAutoSampIntegration.exe",
+        ):
+        self.holster = holster
         self.f = None
         self.vast_process = subprocess.Popen(self.holster)
-
+        
         # Stage starts at (x,y) = home when you boot up the VAST by default
         # It would be nice to query the stage directly, but not sure if this can be done...
         self.x_pos = 0
@@ -22,7 +25,7 @@ class VASTController:
         self.theta_pos = 0
         # NOTE: Keep positions in [um] and convert to uS under the hood!
 
-        self.wait_until_done = False # Maybe implement this later...
+        self.wait_until_done = False
 
         self.connect()
 
@@ -38,11 +41,10 @@ class VASTController:
 
         print("Beginning VAST connection...")
 
-        # NOTE: Pipe will fail due to win32 File not found error if the DebugView is not open!
-        
+        # NOTE: Pipe will fail due to Win32:FileNotFound error if the DebugView is not open!
         while not connect_init:
             try:
-                self.f = open(r'\\.\pipe\VASTInteropPipe', 'r+b', 0)
+                self.f = open(r'\\.\pipe\VastServerPipe', 'r+b', 0)
                 connect_init = True
             except:
                 time.sleep(1)
@@ -71,6 +73,9 @@ class VASTController:
         if out_str:
             return out_str
 
+    def get_last_autostore_location(self):
+        return self.send('autostore')
+
     def start_vast(self):
         self.send('boot')
 
@@ -89,12 +94,12 @@ class VASTController:
 
     def move_rel(self, x, y):
         self.send(
-            f"mrel,{x},{y}"
+            f"mrel,0,{x},{y}"
         )
     
     def move_abs(self, x, y):
         self.send(
-            f"mabs,{x},{y}"
+            f"mabs,0,{x},{y}"
         )
 
     def move_rel_um(self, x_um, y_um):
@@ -106,7 +111,6 @@ class VASTController:
             int(y_um * VASTController.UM_TO_US)
         )
 
-        # include in the relevant moves, maybe include in all later
         if self.wait_until_done:
             self.wait()
     
@@ -118,7 +122,10 @@ class VASTController:
             int(x_um * VASTController.UM_TO_US), 
             int(y_um * VASTController.UM_TO_US)
         )
-    
+
+        if self.wait_until_done:
+            self.wait()
+
     def continue_operation(self):
         self.send('cont')
 
@@ -132,20 +139,10 @@ class VASTController:
             time.sleep(0.01)
 
     def check_motors_busy_status(self):
-        busy_str = self.send("busy")
-        return int(busy_str.split(',')[-1])
+        return int(self.send("busy"))
 
     def move_to_specified_position(self, x_pos=0.0, y_pos=0.0, theta_pos=0.0):
 
-        # print("\nvast_controller/move_to_specified_position: BEGIN")
-        # print(f"\ttheta_pos = {(theta_pos)}")
-        # print(f"\tself.theta_pos = {(self.theta_pos)}")
-        # print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
-
-        # print("\n---- SEND MOVE COMMAND ----")
-        # Move the stage first
-        # self.move_abs_um(x_um=x_pos, y_um=y_pos)
-        # Perform relative move in (x,y). Seems to work better for the x-axis.
         self.move_rel_um(
             x_um=(x_pos - self.x_pos),
             y_um=(y_pos - self.y_pos)
@@ -154,9 +151,4 @@ class VASTController:
         # If there is a theta move, do an "absolute" capillary rotation
         if theta_pos != self.theta_pos:
             self.rotate_deg(theta=(theta_pos - self.theta_pos))
-
-        # print("\nvast_controller/move_to_specified_position: END")
-        # print(f"\ttheta_pos = {(theta_pos)}")
-        # print(f"\tself.theta_pos = {(self.theta_pos)}")
-        # print(f"\t(theta_pos - self.theta_pos) = {(theta_pos - self.theta_pos)}")
         
