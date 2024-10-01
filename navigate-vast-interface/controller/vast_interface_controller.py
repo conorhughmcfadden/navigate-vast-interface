@@ -40,7 +40,8 @@ class VastInterfaceController(GUIController):
         # variables
         self.perspective = 0
         self.coord = [0, 0, 0, 0, 0] # (x,y,z,theta,f)
-        self.coords_list = []
+        self.positions = []
+        self.nose_position = None
         self.x_pos = 0
         self.y_pos = 0
         self.background = None
@@ -70,10 +71,10 @@ class VastInterfaceController(GUIController):
         self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = False
 
     def update_experiment_values(self):
-        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.coords_list
+        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.positions
         self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
             "multiposition_count"
-        ] = len(self.coords_list)
+        ] = len(self.positions)
 
     def load_image(self, dir="C:/Users/vastopmv3/Documents/Python/Fish/Well_A04/", chan="Yl-led615", view=1, slice=5):
         im_path = os.path.join(
@@ -99,8 +100,10 @@ class VastInterfaceController(GUIController):
         self.fish_widget.ax.set_ylim(0, self.l)
 
         # display selected points
-        if len(self.coords_list) > 0:
-            c = np.array(self.coords_list)
+        if self.nose_position is not None:
+            self.fish_widget.ax.scatter(self.nose_position[0], self.nose_position[1], marker='x', color=[0,0,1])
+        if len(self.positions) > 0:
+            c = np.array(self.positions)
             self.fish_widget.ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
 
         # set up canvas
@@ -124,6 +127,16 @@ class VastInterfaceController(GUIController):
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
         self.fish_widget.canvas.flush_events()
 
+    def update_positions(self):
+        new_position = deepcopy(self.coord)
+        
+        if self.nose_position is not None:
+            self.positions += [new_position]
+            relative_positions = [(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]
+            self.update_multiposition_controller(relative_positions)
+        else:
+            self.nose_position = new_position
+            
     def on_click(self, event):
         if event.button == 1:          
             if self.perspective == 0:
@@ -132,9 +145,8 @@ class VastInterfaceController(GUIController):
                 self.perspective = 1
             elif self.perspective == 1:
                 self.coord[2] = self.y_pos
-                self.coords_list += [deepcopy(self.coord)]
+                self.update_positions()
                 self.perspective = 0
-                self.update_multiposition_controller(self.coords_list)
 
             self.draw_fish()
 
