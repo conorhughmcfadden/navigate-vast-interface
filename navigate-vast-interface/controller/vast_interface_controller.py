@@ -54,6 +54,7 @@ class VastInterfaceController(GUIController):
         ]
         self.curr_channel = 0
         self.n_views = 2
+        self.gammas = [1.0] * len(self.channel_names)
 
         # load fish images
         self.images = []
@@ -88,6 +89,11 @@ class VastInterfaceController(GUIController):
             self.key_press
         )
 
+        self.fish_widget.fig.canvas.mpl_connect(
+            'scroll_event',
+            self.mouse_wheel
+        )
+
     def close(self):
         self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = False
 
@@ -104,7 +110,8 @@ class VastInterfaceController(GUIController):
             f"{chan}_{slice}.tiff"
         )
 
-        return tifffile.imread(im_path)
+        im = tifffile.imread(im_path)
+        return np.flip(im, axis=0)
 
     def draw_fish(self):
         # clear axes
@@ -113,7 +120,7 @@ class VastInterfaceController(GUIController):
         # initialize plot
         chan = self.channel_names[self.curr_channel]
         self.fish_widget.ax.imshow(
-            adjust_gamma(self.images[self.perspective][chan], 0.3),
+            adjust_gamma(self.images[self.perspective][chan], self.gammas[self.curr_channel]),
             cmap='gray'
         )
 
@@ -164,6 +171,11 @@ class VastInterfaceController(GUIController):
             if int(event.key) == (c+1):
                 self.curr_channel = c
                 self.draw_fish()
+
+    def mouse_wheel(self, event):
+        self.gammas[self.curr_channel] += event.step * 0.02
+        self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
+        self.draw_fish()
 
     def on_click(self, event):
         if event.button == 1:          
