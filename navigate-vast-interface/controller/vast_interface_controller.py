@@ -38,6 +38,7 @@ class VastInterfaceController(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
+        self.text = self.variables['text']
 
         # variables
         self.perspective = 0
@@ -159,16 +160,38 @@ class VastInterfaceController(GUIController):
 
         # display selected points
         if self.nose_position is not None:
-            ax.scatter(self.nose_position[0], self.nose_position[self.perspective+1], marker='x', color=[0,0,1])
+            ax.scatter(self.nose_position[0], self.nose_position[2-self.perspective], marker='x', color=[0,0,1])
         if len(self.positions) > 0:
             c = np.array(self.positions)
-            ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
+            ax.scatter(c[:,0], c[:,2-self.perspective], marker='+', color=[0,1,0])
 
         # set up canvas
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
             ax.bbox
         )
+
+    @staticmethod
+    def coord2str(c):
+        c = np.asarray(c) * VAST_UM_PIX
+        return f"({c[0]:.2f}, {c[1]:.2f}, {c[2]:.2f})\t"
+
+    def update_text(self):
+        tstr = "nose_position: "
+        
+        if self.nose_position:
+            tstr += self.coord2str(self.nose_position)
+            tstr += "current: "
+        
+        try:
+            if self.perspective == 0:
+                tstr += self.coord2str([self.x_pos, 0, self.y_pos])
+            else:
+                tstr += self.coord2str([self.coord[0], self.y_pos, self.coord[2]])
+        except TypeError:
+            pass
+
+        self.text.set(tstr)
 
     def move_crosshair(self, event):
         if not self.locked:
@@ -185,6 +208,8 @@ class VastInterfaceController(GUIController):
                 self.fish_widget.ax.draw_artist(l)
             self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
             self.fish_widget.canvas.flush_events()
+
+            self.update_text()
 
     def update_positions(self):
         new_position = deepcopy(self.coord)
@@ -212,11 +237,11 @@ class VastInterfaceController(GUIController):
         if event.button == 1:
             if not self.locked:          
                 if self.perspective == 0:
-                    self.coord[0] = self.x_pos
-                    self.coord[1] = self.y_pos
+                    self.coord[0] = self.x_pos # x
+                    self.coord[2] = self.y_pos # z
                     self.perspective = 1
                 elif self.perspective == 1:
-                    self.coord[2] = self.y_pos
+                    self.coord[1] = self.y_pos # y
                     self.update_positions()
                     self.perspective = 0
         elif event.button == 3:

@@ -56,6 +56,10 @@ class VastInterfaceFrame(ttk.Frame):
         # ######## Example Widgets ########
         # ##### add your widgets here #####
         # #################################
+        self.variables['text'] = tk.StringVar()
+        self.text_label = ttk.Label(self, textvariable=self.variables['text'])
+        self.text_label.pack()
+
         self.fish_widget = FishWidget(self)
         self.fish_widget.canvas.get_tk_widget().pack()
         
