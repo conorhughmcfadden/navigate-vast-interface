@@ -177,17 +177,21 @@ class VastInterfaceController(GUIController):
         return f"({c[0]:.2f}, {c[1]:.2f}, {c[2]:.2f})\t"
 
     def update_text(self):
-        tstr = "nose_position: "
-        
+        tstr = f"channel: {self.channel_names[self.curr_channel]}"
+
+        tstr += "\tnose_position: "
+        p0 = 0
         if self.nose_position:
             tstr += self.coord2str(self.nose_position)
+            p0 = self.nose_position[:3]
             tstr += "current: "
         
         try:
             if self.perspective == 0:
-                tstr += self.coord2str([self.x_pos, 0, self.y_pos])
+                pos = np.asarray([self.x_pos, np.nan, self.y_pos])
             else:
-                tstr += self.coord2str([self.coord[0], self.y_pos, self.coord[2]])
+                pos = np.asarray([self.coord[0], self.y_pos, self.coord[2]])
+            tstr += self.coord2str(pos - p0)     
         except TypeError:
             pass
 
