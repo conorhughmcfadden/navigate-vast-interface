@@ -46,12 +46,28 @@ class VastInterfaceController(GUIController):
         self.y_pos = 0
         self.background = None
 
-        # load fish images
-        self.images = [
-            self.load_image(view=2),
-            self.load_image(view=1)
+        # TODO: these are hardcoded rn... get from VastServer?
+        self.channel_names = [
+            "",
+            "Bl-led512",
+            "Yl-led615"
         ]
-        self.l, self.w = self.images[0].shape
+        self.curr_channel = 0
+        self.n_views = 2
+
+        # load fish images
+        self.images = []
+
+        for v in range(self.n_views):
+            new_view = {}
+            for chan in self.channel_names:
+                new_view[chan] = self.load_image(
+                    view = self.n_views - v,
+                    chan = chan
+                )
+            self.images += [new_view]
+
+        self.l, self.w = self.images[0][self.channel_names[0]].shape
 
         # draw the fish widget
         self.draw_fish()
@@ -65,6 +81,11 @@ class VastInterfaceController(GUIController):
         self.fish_widget.fig.canvas.mpl_connect(
             'button_press_event',
             self.on_click
+        )
+        
+        self.fish_widget.fig.canvas.mpl_connect(
+            'key_press_event',
+            self.key_press
         )
 
     def close(self):
@@ -90,8 +111,9 @@ class VastInterfaceController(GUIController):
         self.fish_widget.ax.clear()
 
         # initialize plot
+        chan = self.channel_names[self.curr_channel]
         self.fish_widget.ax.imshow(
-            adjust_gamma(self.images[self.perspective], 0.3),
+            adjust_gamma(self.images[self.perspective][chan], 0.3),
             cmap='gray'
         )
 
@@ -136,7 +158,13 @@ class VastInterfaceController(GUIController):
             self.update_multiposition_controller(relative_positions)
         else:
             self.nose_position = new_position
-            
+
+    def key_press(self, event):
+        for c, _ in enumerate(self.channel_names):
+            if int(event.key) == (c+1):
+                self.curr_channel = c
+                self.draw_fish()
+
     def on_click(self, event):
         if event.button == 1:          
             if self.perspective == 0:
