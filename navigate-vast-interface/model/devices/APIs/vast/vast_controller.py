@@ -74,10 +74,13 @@ class VASTController:
             return out_str
 
     def get_last_autostore_location(self):
-        return self.send('autostore')
+        return self.send("get_autost")
+
+    def set_autostore_location(self, autost_dir):
+        self.send(f"set_autost,{autost_dir}")
 
     def start_vast(self):
-        self.send('boot')
+        self.send("boot")
 
     def rotate(self, steps):
         self.send(
@@ -126,8 +129,9 @@ class VASTController:
         if self.wait_until_done:
             self.wait()
 
+    # TODO: implement...
     def continue_operation(self):
-        self.send('cont')
+        self.send("cont")
 
     def wait(self):
         busy_status = 1 # anything but zero
