@@ -16,6 +16,8 @@ from skimage.exposure import adjust_gamma
 from navigate.controller.sub_controllers.gui import GUIController
 from navigate.tools.file_functions import load_yaml_file
 
+VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
+
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller=None):
@@ -45,6 +47,7 @@ class VastInterfaceController(GUIController):
         self.x_pos = 0
         self.y_pos = 0
         self.background = None
+        self.locked = False
 
         # TODO: these are hardcoded rn... get from VastServer?
         self.channel_names = [
@@ -114,47 +117,74 @@ class VastInterfaceController(GUIController):
         return np.flip(im, axis=0)
 
     def draw_fish(self):
+        ax = self.fish_widget.ax
+        
         # clear axes
-        self.fish_widget.ax.clear()
+        ax.clear()
 
         # initialize plot
         chan = self.channel_names[self.curr_channel]
-        self.fish_widget.ax.imshow(
+        ax.imshow(
             adjust_gamma(self.images[self.perspective][chan], self.gammas[self.curr_channel]),
             cmap='gray'
         )
 
+        # scale axes to VAST
+        res = 0.5
+        ticks = ax.get_xticks()*VAST_UM_PIX/1000
+        n_ticks = int(ticks.max()/res)
+        tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
+        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ax.set_xticks(ticks)
+        _ = ax.set_xticklabels(tick_labels)
+
+        res = 0.25
+        ticks = ax.get_yticks()*VAST_UM_PIX/1000
+        n_ticks = int(ticks.max()/res)
+        tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
+        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ax.set_yticks(ticks)
+        _ = ax.set_yticklabels(tick_labels)
+
+        # label axes
+        ax.set_xlabel("X [mm]")
+        if self.perspective == 0:
+            ax.set_ylabel("Z [mm]")
+        else:
+            ax.set_ylabel("Y [mm]")
+
         # fix xy limits
-        self.fish_widget.ax.set_xlim(0, self.w)
-        self.fish_widget.ax.set_ylim(0, self.l)
+        ax.set_xlim(0, self.w)
+        ax.set_ylim(0, self.l)
 
         # display selected points
         if self.nose_position is not None:
-            self.fish_widget.ax.scatter(self.nose_position[0], self.nose_position[1], marker='x', color=[0,0,1])
+            ax.scatter(self.nose_position[0], self.nose_position[self.perspective+1], marker='x', color=[0,0,1])
         if len(self.positions) > 0:
             c = np.array(self.positions)
-            self.fish_widget.ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
+            ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
 
         # set up canvas
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
-            self.fish_widget.ax.bbox
+            ax.bbox
         )
 
     def move_crosshair(self, event):
-        # create the new data    
-        if self.perspective == 0:
-            self.x_pos = event.xdata
-        self.y_pos = event.ydata
-        self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
-        self.fish_widget.lines[1].set_data([0, self.w], [self.y_pos]*2)
+        if not self.locked:
+            # create the new data    
+            if self.perspective == 0:
+                self.x_pos = event.xdata
+            self.y_pos = event.ydata
+            self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
+            self.fish_widget.lines[1].set_data([0, self.w], [self.y_pos]*2)
 
-        # blit new data into old frame
-        self.fish_widget.canvas.restore_region(self.background)
-        for l in self.fish_widget.lines:
-            self.fish_widget.ax.draw_artist(l)
-        self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
-        self.fish_widget.canvas.flush_events()
+            # blit new data into old frame
+            self.fish_widget.canvas.restore_region(self.background)
+            for l in self.fish_widget.lines:
+                self.fish_widget.ax.draw_artist(l)
+            self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
+            self.fish_widget.canvas.flush_events()
 
     def update_positions(self):
         new_position = deepcopy(self.coord)
@@ -162,6 +192,7 @@ class VastInterfaceController(GUIController):
         if self.nose_position is not None:
             self.positions += [new_position]
             relative_positions = [(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]
+            relative_positions = np.array(relative_positions) * VAST_UM_PIX
             self.update_multiposition_controller(relative_positions)
         else:
             self.nose_position = new_position
@@ -178,17 +209,25 @@ class VastInterfaceController(GUIController):
         self.draw_fish()
 
     def on_click(self, event):
-        if event.button == 1:          
-            if self.perspective == 0:
-                self.coord[0] = self.x_pos
-                self.coord[1] = self.y_pos
-                self.perspective = 1
-            elif self.perspective == 1:
-                self.coord[2] = self.y_pos
-                self.update_positions()
+        if event.button == 1:
+            if not self.locked:          
+                if self.perspective == 0:
+                    self.coord[0] = self.x_pos
+                    self.coord[1] = self.y_pos
+                    self.perspective = 1
+                elif self.perspective == 1:
+                    self.coord[2] = self.y_pos
+                    self.update_positions()
+                    self.perspective = 0
+        elif event.button == 3:
+            if self.perspective < self.n_views-1:
+                self.perspective += 1
+            else:
                 self.perspective = 0
+            
+            self.locked = self.perspective > 0
 
-            self.draw_fish()
+        self.draw_fish()
 
     def update_multiposition_controller(self, positions=[[]]):
         self.parent_controller.multiposition_tab_controller.set_positions(positions)
