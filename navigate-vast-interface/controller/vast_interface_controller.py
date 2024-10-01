@@ -49,6 +49,8 @@ class VastInterfaceController(GUIController):
         self.y_pos = 0
         self.background = None
         self.locked = False
+        
+        self.autost_dir = self.parent_controller.configuration['experiment']['VAST']['AutostoreLocation']
 
         # TODO: these are hardcoded rn... get from VastServer?
         self.channel_names = [

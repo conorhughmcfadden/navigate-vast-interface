@@ -6,7 +6,9 @@ class VastAnnotator:
 
         self.config_table = {
             "signal": {
+                "init": self.init,
                 "main": self.signal_func,
+                "cleanup": self.cleanup
             },
             "node": {
                 "need_response": False
@@ -15,6 +17,20 @@ class VastAnnotator:
 
     def vast_status(self):
         return self.model.configuration["experiment"]["VAST"]["VASTAnnotatorStatus"]
+
+    def init_autostore_loc(self):
+        self.autost_dir = self.model.configuration["experiment"]["VAST"]["AutostoreLocation"]
+
+        if self.autost_dir is None:
+            from tkinter import filedialog
+            autost_dir = filedialog.askdirectory(title="Choose VAST autostore directory...")
+            self.model.run_command("set_autostore", autost_dir)
+            self.autost_dir = autost_dir
+            self.model.configuration["experiment"]["VAST"]["AutostoreLocation"] = self.autost_dir
+
+    def init(self):
+        self.init_autostore_loc()
+        self.model.pause_data_thread()
 
     def signal_func(self):
         # build the vast annotator popup window
@@ -33,3 +49,6 @@ class VastAnnotator:
         # wait while user selects points (finish on close)
         while self.vast_status():
             time.sleep(0.1)
+
+    def cleanup(self):
+        self.model.resume_data_thread()

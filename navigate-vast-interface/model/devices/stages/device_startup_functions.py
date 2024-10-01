@@ -32,10 +32,10 @@ def load_device(hardware_configuration, is_synthetic=False, **kwargs):
     else:
         stage_type = hardware_configuration["type"]
 
-    if stage_type == "VAST" and platform.system() == "Windows":
+    if stage_type.lower() == "vast" and platform.system() == "Windows":
         plugin_device = load_module_from_file(
-            "vast",
-            os.path.join(Path(__file__).resolve().parent, "vast.py"),
+            "plugin_device",
+            os.path.join(Path(__file__).resolve().parent, "plugin_device.py"),
         )
 
         return auto_redial(
@@ -74,12 +74,12 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
     else:
         device_type = device_config["type"]
 
-    if device_type == "VAST":
+    if device_type.lower() == "vast":
         plugin_device = load_module_from_file(
-            "vast",
-            os.path.join(Path(__file__).resolve().parent, "vast.py"),
+            "plugin_device",
+            os.path.join(Path(__file__).resolve().parent, "plugin_device.py"),
         )
-        return plugin_device.VASTStage(
+        return plugin_device.PluginDevice(
             microscope_name, 
             device_connection, 
             configuration,
