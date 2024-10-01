@@ -14,7 +14,7 @@ class VastAnnotator:
         }
 
     def vast_status(self):
-        return self.model.configuration["experiment"]["VASTAnnotatorStatus"]
+        return self.model.configuration["experiment"]["VAST"]["VASTAnnotatorStatus"]
 
     def signal_func(self):
         # build the vast annotator popup window

@@ -30,7 +30,7 @@ class VastInterfaceController(GUIController):
 
         self.initialize()
 
-        self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = True
+        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
 
     def initialize(self):
         self.variables = self.view.get_variables()
@@ -99,7 +99,7 @@ class VastInterfaceController(GUIController):
         )
 
     def close(self):
-        self.parent_controller.model.configuration['experiment']['VASTAnnotatorStatus'] = False
+        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
 
     def update_experiment_values(self):
         self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.positions

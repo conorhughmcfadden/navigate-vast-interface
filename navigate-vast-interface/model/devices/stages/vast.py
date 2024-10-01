@@ -79,11 +79,6 @@ def build_VAST_connection() -> object:
     vast_controller = vast_api.VASTController()
     vast_controller.start_vast()
 
-    # n_iters = 45
-    # for i in range(n_iters):
-    #     print(f"stage_vast: waiting for VAST software to boot... {i}/{n_iters}")
-    #     time.sleep(1)
-
     return vast_controller
 
 
@@ -116,8 +111,8 @@ class VASTStage(StageBase):
 
         self.vast_axes = dict(map(lambda v: (v[1], v[0]), self.axes_mapping.items()))
 
-        # Set the VAST stage as the device_connection
-        self.stage = device_connection
+        # Set the VAST as the device_connection
+        self.vast = device_connection
 
         # Define the stage positions (there is no Z!)
         self.stage_x_pos = None
@@ -125,6 +120,12 @@ class VASTStage(StageBase):
         self.stage_theta_pos = None
 
         self.report_position()
+
+        # create 'VAST' dict, and set the vast.autostore_location to empty on startup
+        configuration['experiment']['VAST'] = {
+            "AutostoreLocation": None,
+            "VASTAnnotatorStatus": False
+        }
 
     def __del__(self):
         """Delete tage Serial Port.
@@ -154,7 +155,7 @@ class VASTStage(StageBase):
                 self.stage_x_pos,
                 self.stage_y_pos,
                 self.stage_theta_pos,
-            ) = self.stage.get_current_position()
+            ) = self.vast.get_current_position()
             for axis, hardware_axis in self.axes_mapping.items():
                 hardware_position = getattr(self, f"stage_{hardware_axis}_pos")
                 self.__setattr__(f"{axis}_pos", hardware_position)
@@ -216,9 +217,9 @@ class VASTStage(StageBase):
         # rely on cached positions
         # if len(pos_dict.keys()) < 3:
         #     self.report_position()
-        self.stage.wait_until_done = wait_until_done
+        self.vast.wait_until_done = wait_until_done
 
-        # self.stage.wait_until_done = False # Enforce no waiting...
+        # self.vast.wait_until_done = False # Enforce no waiting...
 
         move_stage = {}
         for axis in pos_dict:
@@ -242,7 +243,7 @@ class VASTStage(StageBase):
         move_stage = any(move_stage.values())
         if move_stage is True:
             try:
-                self.stage.move_to_specified_position(
+                self.vast.move_to_specified_position(
                     x_pos=self.stage_x_pos,
                     y_pos=self.stage_y_pos,
                     theta_pos=self.stage_theta_pos,
@@ -258,7 +259,7 @@ class VASTStage(StageBase):
     def stop(self):
         """Stop all stage movement abruptly."""
         # try:
-        #     self.stage.interrupt_move()
+        #     self.vast.interrupt_move()
         # except Exception as error:
         #     # logger.exception(f"VAST - Stage stop failed: {error}")
         pass
@@ -269,7 +270,7 @@ class VASTStage(StageBase):
 
         try:
             self.stop()
-            self.stage.close()
+            self.vast.close()
             # logger.debug("VAST stage connection closed")
         except (AttributeError, BaseException) as e:
             print("Error while closing the VAST stage connection", e)
