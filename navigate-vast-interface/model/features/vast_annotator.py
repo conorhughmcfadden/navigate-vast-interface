@@ -1,5 +1,18 @@
 import time
 
+class TestFeature:
+    def __init__(self, model, *args):
+        self.model = model
+
+        self.config_table = {
+            "signal": {
+                "main": self.run
+            },
+        }
+    
+    def run(self):
+        self.model.run_command("move_plugin_device", "hello!")
+
 class VastAnnotator:
     def __init__(self, model, *args):
         self.model = model
