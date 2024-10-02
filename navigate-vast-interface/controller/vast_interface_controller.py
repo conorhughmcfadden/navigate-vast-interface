@@ -44,6 +44,7 @@ class VastInterfaceController(GUIController):
         self.perspective = 0
         self.coord = [0, 0, 0, 0, 0] # (x,y,z,theta,f)
         self.positions = []
+        self.relative_positions = [[]]
         self.nose_position = None
         self.x_pos = 0
         self.y_pos = 0
@@ -104,10 +105,10 @@ class VastInterfaceController(GUIController):
         self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
 
     def update_experiment_values(self):
-        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.positions
+        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
         self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
             "multiposition_count"
-        ] = len(self.positions)
+        ] = len(self.relative_positions)
 
     def load_image(self, dir="C:/Users/vastopmv3/Documents/Python/Fish/Well_A04/", chan="Yl-led615", view=1, slice=5):
         im_path = os.path.join(
@@ -222,9 +223,8 @@ class VastInterfaceController(GUIController):
         
         if self.nose_position is not None:
             self.positions += [new_position]
-            relative_positions = [(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]
-            relative_positions = np.array(relative_positions) * VAST_UM_PIX
-            self.update_multiposition_controller(relative_positions)
+            self.relative_positions = np.array([(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]) * VAST_UM_PIX
+            self.update_multiposition_controller()
         else:
             self.nose_position = new_position
 
@@ -260,8 +260,8 @@ class VastInterfaceController(GUIController):
 
         self.draw_fish()
 
-    def update_multiposition_controller(self, positions=[[]]):
-        self.parent_controller.multiposition_tab_controller.set_positions(positions)
+    def update_multiposition_controller(self):
+        self.parent_controller.multiposition_tab_controller.set_positions(self.relative_positions)
         self.update_experiment_values()
 
     def build_vast_popup(self, event):
