@@ -87,12 +87,16 @@ def start_device(microscope_name, device_connection, configuration, is_synthetic
             )
     
     elif device_type == "synthetic":
-        return SyntheticStage(
-            microscope_name,
-            device_connection,
+        synthetic_device = load_module_from_file(
+            "synthetic_device",
+            os.path.join(Path(__file__).resolve().parent, "synthetic_device.py"),
+        )
+        return synthetic_device.SyntheticDevice(
+            microscope_name, 
+            device_connection, 
             configuration,
             id
-        )
+            )
     
     else:
         return device_not_found(microscope_name, device_type)

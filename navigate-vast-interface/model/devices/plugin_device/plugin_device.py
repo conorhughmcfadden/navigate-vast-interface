@@ -81,13 +81,9 @@ def build_VAST_connection() -> object:
 
     return vast_controller
 
-
-# class VASTStage(StageBase):
 class PluginDevice(StageBase):
     
-    """VAST BioImager Stage Control
-
-    Based of the tage class for now...
+    """VAST implemented as a plugin device
     """
 
     def __init__(self, microscope_name, device_connection, configuration, device_id=0):
