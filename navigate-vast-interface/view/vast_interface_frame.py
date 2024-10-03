@@ -65,6 +65,18 @@ class VastInterfaceFrame(ttk.Frame):
         
         self.inputs['fish_widget'] = self.fish_widget
 
+        load_expt_frame = ttk.Frame(self)
+
+        path_button = ttk.Button(load_expt_frame, text="Load Experiment")
+        path_button.grid(row=0, column=0, sticky=tk.NW)
+        self.buttons['path'] = path_button
+
+        self.variables['path'] = tk.StringVar()
+        path_label = ttk.Label(load_expt_frame, textvariable=self.variables['path'])
+        path_label.grid(row=0, column=1, sticky=tk.NW)
+
+        load_expt_frame.pack()
+
         # label = ttk.Label(self, text="VAST Interface")
         # label.grid(row=0, column=0, sticky=tk.NW)
 

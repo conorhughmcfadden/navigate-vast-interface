@@ -119,12 +119,6 @@ class PluginDevice(StageBase):
 
         self.report_position()
 
-        # create 'VAST' dict, and set the vast.autostore_location to empty on startup
-        configuration['experiment']['VAST'] = {
-            "AutostoreLocation": None,
-            "VASTAnnotatorStatus": False
-        }
-
     def __del__(self):
         """Delete tage Serial Port.
 

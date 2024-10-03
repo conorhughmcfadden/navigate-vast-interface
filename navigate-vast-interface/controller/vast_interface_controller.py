@@ -16,6 +16,9 @@ from skimage.exposure import adjust_gamma
 from navigate.controller.sub_controllers.gui import GUIController
 from navigate.tools.file_functions import load_yaml_file
 
+from navigate.tools.xml_tools import parse_xml
+import xml.etree.ElementTree as ET
+
 VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
 
 class VastInterfaceController(GUIController):
@@ -38,7 +41,9 @@ class VastInterfaceController(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
-        self.text = self.variables['text']
+        self.text_var = self.variables['text']
+        self.vexp_path_var = self.variables['path']
+        self.path_button = self.buttons['path']
 
         # variables
         self.perspective = 0
@@ -51,7 +56,9 @@ class VastInterfaceController(GUIController):
         self.background = None
         self.locked = False
         
-        self.autost_dir = self.parent_controller.configuration['experiment']['VAST']['AutostoreLocation']
+        self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
+        self.vexp_path_var.set(self.vexp_path)
+        self.vexp = self.parse_vexp()
 
         # TODO: these are hardcoded rn... get from VastServer?
         self.channel_names = [
@@ -101,6 +108,18 @@ class VastInterfaceController(GUIController):
             self.mouse_wheel
         )
 
+        self.path_button.configure(command=self.load_vexp)
+
+    def load_vexp(self):
+        vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
+        self.vexp_path = vexp_file.name
+        self.update_experiment_values()
+        self.initialize()
+
+    def parse_vexp(self):
+        tree = ET.parse(self.vexp_path)
+        return parse_xml(tree.getroot())
+
     def close(self):
         self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
 
@@ -109,6 +128,7 @@ class VastInterfaceController(GUIController):
         self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
             "multiposition_count"
         ] = len(self.relative_positions)
+        self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
 
     def load_image(self, dir="C:/Users/vastopmv3/Documents/Python/Fish/Well_A04/", chan="Yl-led615", view=1, slice=5):
         im_path = os.path.join(
@@ -198,7 +218,7 @@ class VastInterfaceController(GUIController):
         except TypeError:
             pass
 
-        self.text.set(tstr)
+        self.text_var.set(tstr)
 
     def move_crosshair(self, event):
         if not self.locked:
