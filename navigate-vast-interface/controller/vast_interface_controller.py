@@ -286,6 +286,7 @@ class VastInterfaceController(GUIController):
         if self.nose_position is not None:
             self.positions += [new_position]
             self.relative_positions = np.array([(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]) * VAST_UM_PIX
+            self.relative_positions[:,0] = -self.relative_positions[:,0] # x is inverted from OPM
             self.update_multiposition_controller()
         else:
             self.nose_position = new_position
