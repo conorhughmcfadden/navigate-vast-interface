@@ -60,14 +60,21 @@ class VastInterfaceController(GUIController):
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()
 
+        recent_chans, recent_views, slice = self.parse_most_recent_well()
+
+        print("recent_chans", recent_chans)
+        print("recent_views", recent_views)
+
         # TODO: these are hardcoded rn... get from VastServer?
-        self.channel_names = [
-            "",
-            "Bl-led512",
-            "Yl-led615"
-        ]
+        # self.channel_names = [
+        #     "",
+        #     "Bl-led512",
+        #     "Yl-led615"
+        # ]
+        self.channel_names = recent_chans
+        self.view_names = recent_views
         self.curr_channel = 0
-        self.n_views = 2
+        self.n_views = len(recent_views)
         self.gammas = [1.0] * len(self.channel_names)
 
         # load fish images
@@ -77,8 +84,9 @@ class VastInterfaceController(GUIController):
             new_view = {}
             for chan in self.channel_names:
                 new_view[chan] = self.load_image(
-                    view = self.n_views - v,
-                    chan = chan
+                    dir=self.view_names[self.n_views - v - 1],
+                    chan=chan,
+                    slice=slice
                 )
             self.images += [new_view]
 
@@ -110,6 +118,37 @@ class VastInterfaceController(GUIController):
 
         self.path_button.configure(command=self.load_vexp)
 
+    def parse_most_recent_well(self):
+        # walk the VAST autostore path
+        walk = os.walk(Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent)
+
+        # get only Well folders containing images
+        well_items = []
+        for item in walk:
+            if 'Well' in item[0]:
+                if item[-1]:
+                    well_items += [item]
+
+        # get recent channels and views
+        recent_chans = []
+        recent_views = []
+        for item in well_items[::-1][:2]:
+            for im in item[-1]:
+                chan = im.split('_')[0]
+                view = item[0]
+                if chan not in recent_chans:
+                    recent_chans += [chan]
+                if view not in recent_views:
+                    recent_views += [view]
+
+        recent_chans.sort()
+        recent_views.sort()
+
+        # middle slice index
+        slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
+
+        return recent_chans, recent_views, slice
+
     def load_vexp(self):
         vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
         self.vexp_path = vexp_file.name
@@ -130,10 +169,9 @@ class VastInterfaceController(GUIController):
         ] = len(self.relative_positions)
         self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
 
-    def load_image(self, dir="C:/Users/vastopmv3/Documents/Python/Fish/Well_A04/", chan="Yl-led615", view=1, slice=5):
+    def load_image(self, dir, chan="", slice=3):
         im_path = os.path.join(
             dir,
-            f"test001_W_A04_0{view}_YStack",
             f"{chan}_{slice}.tiff"
         )
 
@@ -180,6 +218,10 @@ class VastInterfaceController(GUIController):
         # fix xy limits
         ax.set_xlim(0, self.w)
         ax.set_ylim(0, self.l)
+
+        # set title to current well/view
+        title = self.view_names[self.perspective].split('\\')[-1]
+        ax.set_title(title)
 
         # display selected points
         if self.nose_position is not None:
