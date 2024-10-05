@@ -15,7 +15,7 @@ class VASTController:
         ):
         self.holster = holster
         self.f = None
-        self.vast_process = subprocess.Popen(self.holster)
+        # self.vast_process = subprocess.Popen(self.holster)
         
         # Stage starts at (x,y) = home when you boot up the VAST by default
         # It would be nice to query the stage directly, but not sure if this can be done...
@@ -31,7 +31,7 @@ class VASTController:
 
     def __del__(self):
         self.close()
-        self.vast_process.kill() # Maybe don't just rudely kill the process... Is there a VAST.shutdown()?
+        # self.vast_process.kill() # Maybe don't just rudely kill the process... Is there a VAST.shutdown()?
 
     def close(self):
         self.f.close()
@@ -41,15 +41,15 @@ class VASTController:
 
         print("Beginning VAST connection...")
 
-        # NOTE: Pipe will fail due to Win32:FileNotFound error if the DebugView is not open!
         while not connect_init:
             try:
                 self.f = open(r'\\.\pipe\VastServerPipe', 'r+b', 0)
                 connect_init = True
             except:
                 time.sleep(1)
+                print("Waiting for connection...")
             
-            print("Waiting for connection..." if not connect_init else "Connection established!")
+        print("Connection established!")
 
     def get_current_position(self):
         return (

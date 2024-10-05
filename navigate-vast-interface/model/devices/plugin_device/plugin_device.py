@@ -77,7 +77,7 @@ def build_VAST_connection() -> object:
 
     # load the VAST connection through the pipe
     vast_controller = vast_api.VASTController()
-    vast_controller.start_vast()
+    # vast_controller.start_vast()
 
     return vast_controller
 
