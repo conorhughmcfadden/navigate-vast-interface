@@ -56,6 +56,15 @@ class VastInterfaceController(GUIController):
         self.background = None
         self.locked = False
         
+        # flip
+        self.flip = self.widgets["flip"]["variable"]
+        self.flip_check = self.widgets["flip"]["button"]
+
+        for axis in self.flip_check:
+            self.flip_check[axis].configure(command=self.set_flip_experiment)
+
+        self.pull_flip_from_experiment()
+
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()
@@ -117,6 +126,24 @@ class VastInterfaceController(GUIController):
         )
 
         self.path_button.configure(command=self.load_vexp)
+
+    def set_flip_experiment(self):
+        try:
+            for axis in self.flip:
+                self.parent_controller.configuration['experiment']['VAST']['Flip'][axis] = self.flip[axis].get()
+        except KeyError:
+            self.parent_controller.configuration['experiment']['VAST']['Flip'] = {}
+            self.set_flip_experiment()
+        
+        if np.size(self.relative_positions) and self.vexp_path:
+            self.update_experiment_values()
+
+    def pull_flip_from_experiment(self):
+        for axis in self.flip:
+            try:
+                self.flip[axis].set(self.parent_controller.configuration['experiment']['VAST']['Flip'][axis])
+            except KeyError:
+                self.flip[axis].set(False)
 
     def parse_most_recent_well(self):
         # walk the VAST autostore path
@@ -180,7 +207,7 @@ class VastInterfaceController(GUIController):
 
     def draw_fish(self):
         ax = self.fish_widget.ax
-        
+
         # clear axes
         ax.clear()
 
@@ -286,7 +313,12 @@ class VastInterfaceController(GUIController):
         if self.nose_position is not None:
             self.positions += [new_position]
             self.relative_positions = np.array([(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]) * VAST_UM_PIX
-            self.relative_positions[:,0] = -self.relative_positions[:,0] # x is inverted from OPM
+            
+            for i, axis in enumerate(self.flip):
+                if self.flip[axis].get():
+                    print(f"Flipping {axis}!")
+                    self.relative_positions[:,i] = -self.relative_positions[:,i] # x is inverted from OPM
+            
             self.update_multiposition_controller()
         else:
             self.nose_position = new_position
