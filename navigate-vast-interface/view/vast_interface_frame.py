@@ -97,11 +97,21 @@ class VastInterfaceFrame(ttk.Frame):
         for i, axis in enumerate(flip_check):
             flip_check[axis].grid(row=0, column=2*i)
             ttk.Label(axis_tools_frame, text=f"Flip {axis.upper()}").grid(row=0, column=2*i+1)
+
+        # append nose
+        append_nose_var = tk.BooleanVar()
+        append_nose_check = ttk.Checkbutton(axis_tools_frame, variable=append_nose_var)
+        append_nose_check.grid(row=0, column=6, sticky=tk.NW)
+        ttk.Label(axis_tools_frame, text="Append Nose Pos").grid(row=0, column=7)
+        self.inputs["append_nose"] = {
+            "button": append_nose_check,
+            "variable": append_nose_var
+        }
         
         # set z-focus origin button
         set_focus_button = ttk.Button(axis_tools_frame, text="Set Z-Stage Origin")
-        set_focus_button.grid(row=0, column=6, sticky=tk.NW)
-        self.buttons['set_focus'] = set_focus_button
+        set_focus_button.grid(row=0, column=8, sticky=tk.NW)
+        self.buttons["set_focus"] = set_focus_button
 
         axis_tools_frame.pack()
 

@@ -74,6 +74,10 @@ class VastInterfaceController(GUIController):
         except KeyError:
             self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
 
+        # append nose
+        self.append_nose = self.widgets['append_nose']['variable']
+        # self.append_nose_button = self.widgets['append_nose']['button']
+
         # vexp file path
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
         self.vexp_path_var.set(self.vexp_path)
@@ -96,6 +100,7 @@ class VastInterfaceController(GUIController):
             for chan in self.channel_names:
                 new_view[chan] = self.load_image(
                     dir=self.view_names[self.n_views - v - 1],
+                    # dir=self.view_names[v],
                     chan=chan,
                     slice=slice
                 )
@@ -129,10 +134,10 @@ class VastInterfaceController(GUIController):
 
         self.path_button.configure(command=self.load_vexp)
         self.set_focus_button.configure(command=self.set_focus)
-
+        
     def set_focus(self):
         self.setting_focus = True
-        self.perspective = 0
+        self.perspective = 1
         self.locked = False
         self.set_focus_button.state(['disabled'])
         self.draw_fish()
@@ -253,9 +258,9 @@ class VastInterfaceController(GUIController):
         # label axes
         ax.set_xlabel("X [mm]")
         if self.perspective == 0:
-            ax.set_ylabel("Z [mm]")
-        else:
             ax.set_ylabel("Y [mm]")
+        else:
+            ax.set_ylabel("Z [mm]")
 
         # fix xy limits
         ax.set_xlim(0, self.w)
@@ -267,13 +272,13 @@ class VastInterfaceController(GUIController):
 
         # display selected points
         if self.nose_position is not None:
-            ax.scatter(self.nose_position[0], self.nose_position[2-self.perspective], marker='x', color=[0,0,1])
+            ax.scatter(self.nose_position[0], self.nose_position[self.perspective+1], marker='x', color=[0,0,1])
         if len(self.positions) > 0:
             c = np.array(self.positions)
-            ax.scatter(c[:,0], c[:,2-self.perspective], marker='+', color=[0,1,0])
+            ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
 
         # display focus origin, if it exists
-        if self.z_focus_pos and self.perspective == 0:
+        if self.z_focus_pos and self.perspective == 1:
             ax.hlines(self.z_focus_pos, 0, self.w, colors=[0,1,0], linestyles='--')
 
         # set up canvas
@@ -299,9 +304,9 @@ class VastInterfaceController(GUIController):
         
         try:
             if self.perspective == 0:
-                pos = np.asarray([self.x_pos, np.nan, self.y_pos])
+                pos = np.asarray([self.x_pos, self.y_pos, np.nan])
             else:
-                pos = np.asarray([self.coord[0], self.y_pos, self.coord[2]])
+                pos = np.asarray([self.coord[0], self.coord[1], self.y_pos])
             tstr += self.coord2str(pos - p0)     
         except TypeError:
             pass
@@ -332,13 +337,25 @@ class VastInterfaceController(GUIController):
         
         if self.nose_position is not None:
             self.positions += [new_position]
-            self.relative_positions = np.array([(np.array(p) - np.array(self.nose_position)).tolist() for p in self.positions]) * VAST_UM_PIX
             
+            do_flip = np.ones(3)
             for i, axis in enumerate(self.flip):
                 if self.flip[axis].get():
-                    print(f"Flipping {axis}!")
-                    self.relative_positions[:,i] = -self.relative_positions[:,i] # x is inverted from OPM
-            
+                    do_flip[i] = -1
+
+            self.relative_positions = np.zeros(np.shape(self.positions))
+            for i, p in enumerate(self.positions):
+                self.relative_positions[i,0] = do_flip[0] * (p[0] - self.nose_position[0]) * VAST_UM_PIX
+                self.relative_positions[i,1] = do_flip[1] * (p[1] - self.nose_position[1]) * VAST_UM_PIX
+                self.relative_positions[i,4] = do_flip[2] * (p[2] - self.z_focus_pos) * VAST_UM_PIX
+
+            # append nose positions to start
+            if self.append_nose.get():
+                self.relative_positions = np.vstack((
+                    [0, 0, 0, 0, 0],
+                    self.relative_positions
+                ))
+
             self.update_multiposition_controller()
         else:
             self.nose_position = new_position
@@ -357,18 +374,18 @@ class VastInterfaceController(GUIController):
     def on_click(self, event):
         if event.button == 1:
             if not self.locked:          
-                if self.perspective == 0:
-                    if self.setting_focus:
-                        self.z_focus_pos = self.y_pos
-                        self.setting_focus = False
-                        self.set_focus_button.state(['!disabled'])
-                        self.update_experiment_values()
-                    else:
-                        self.coord[0] = self.x_pos # x
-                        self.coord[2] = self.y_pos # z
-                        self.perspective = 1
-                elif self.perspective == 1:
+                if self.setting_focus:
+                    self.z_focus_pos = self.y_pos
+                    self.setting_focus = False
+                    self.locked = True
+                    self.set_focus_button.state(['!disabled'])
+                    self.update_experiment_values()
+                elif self.perspective == 0:
+                    self.coord[0] = self.x_pos # x
                     self.coord[1] = self.y_pos # y
+                    self.perspective = 1
+                elif self.perspective == 1:
+                    self.coord[2] = self.y_pos # z
                     self.update_positions()
                     self.perspective = 0
         elif event.button == 3:
