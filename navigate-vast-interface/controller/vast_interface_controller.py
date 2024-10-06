@@ -44,6 +44,7 @@ class VastInterfaceController(GUIController):
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
+        self.set_focus_button = self.buttons['set_focus']
 
         # variables
         self.perspective = 0
@@ -55,7 +56,8 @@ class VastInterfaceController(GUIController):
         self.y_pos = 0
         self.background = None
         self.locked = False
-        
+        self.setting_focus = False
+
         # flip
         self.flip = self.widgets["flip"]["variable"]
         self.flip_check = self.widgets["flip"]["button"]
@@ -65,21 +67,21 @@ class VastInterfaceController(GUIController):
 
         self.pull_flip_from_experiment()
 
+        # focus pos
+        self.z_focus_pos = 0
+        try:
+            self.z_focus_pos = self.parent_controller.configuration['experiment']['VAST']['ZFocusPos']
+        except KeyError:
+            self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
+
+        # vexp file path
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()
 
+        # get channel names
         recent_chans, recent_views, slice = self.parse_most_recent_well()
 
-        print("recent_chans", recent_chans)
-        print("recent_views", recent_views)
-
-        # TODO: these are hardcoded rn... get from VastServer?
-        # self.channel_names = [
-        #     "",
-        #     "Bl-led512",
-        #     "Yl-led615"
-        # ]
         self.channel_names = recent_chans
         self.view_names = recent_views
         self.curr_channel = 0
@@ -126,6 +128,14 @@ class VastInterfaceController(GUIController):
         )
 
         self.path_button.configure(command=self.load_vexp)
+        self.set_focus_button.configure(command=self.set_focus)
+
+    def set_focus(self):
+        self.setting_focus = True
+        self.perspective = 0
+        self.locked = False
+        self.set_focus_button.state(['disabled'])
+        self.draw_fish()
 
     def set_flip_experiment(self):
         try:
@@ -135,8 +145,7 @@ class VastInterfaceController(GUIController):
             self.parent_controller.configuration['experiment']['VAST']['Flip'] = {}
             self.set_flip_experiment()
         
-        if np.size(self.relative_positions) and self.vexp_path:
-            self.update_experiment_values()
+        self.update_experiment_values()
 
     def pull_flip_from_experiment(self):
         for axis in self.flip:
@@ -190,11 +199,17 @@ class VastInterfaceController(GUIController):
         self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
 
     def update_experiment_values(self):
-        self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
-        self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
-            "multiposition_count"
-        ] = len(self.relative_positions)
-        self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
+        if np.size(self.relative_positions):
+            self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
+            self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
+                "multiposition_count"
+            ] = len(self.relative_positions)
+        
+        if self.vexp_path:
+            self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
+
+        if self.z_focus_pos:
+            self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
 
     def load_image(self, dir, chan="", slice=3):
         im_path = os.path.join(
@@ -257,6 +272,10 @@ class VastInterfaceController(GUIController):
             c = np.array(self.positions)
             ax.scatter(c[:,0], c[:,2-self.perspective], marker='+', color=[0,1,0])
 
+        # display focus origin, if it exists
+        if self.z_focus_pos and self.perspective == 0:
+            ax.hlines(self.z_focus_pos, 0, self.w, colors=[0,1,0], linestyles='--')
+
         # set up canvas
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
@@ -295,7 +314,8 @@ class VastInterfaceController(GUIController):
             if self.perspective == 0:
                 self.x_pos = event.xdata
             self.y_pos = event.ydata
-            self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
+            if not self.setting_focus:
+                self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
             self.fish_widget.lines[1].set_data([0, self.w], [self.y_pos]*2)
 
             # blit new data into old frame
@@ -338,9 +358,15 @@ class VastInterfaceController(GUIController):
         if event.button == 1:
             if not self.locked:          
                 if self.perspective == 0:
-                    self.coord[0] = self.x_pos # x
-                    self.coord[2] = self.y_pos # z
-                    self.perspective = 1
+                    if self.setting_focus:
+                        self.z_focus_pos = self.y_pos
+                        self.setting_focus = False
+                        self.set_focus_button.state(['!disabled'])
+                        self.update_experiment_values()
+                    else:
+                        self.coord[0] = self.x_pos # x
+                        self.coord[2] = self.y_pos # z
+                        self.perspective = 1
                 elif self.perspective == 1:
                     self.coord[1] = self.y_pos # y
                     self.update_positions()

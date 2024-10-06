@@ -77,17 +77,18 @@ class VastInterfaceFrame(ttk.Frame):
 
         load_expt_frame.pack()
 
-        flip_frame = ttk.Frame(self)
+        axis_tools_frame = ttk.Frame(self)
 
+        # flip checks
         flip_var = {
             "x": tk.BooleanVar(),
             "y": tk.BooleanVar(),
             "z": tk.BooleanVar()
         }
         flip_check = {
-            "x": ttk.Checkbutton(flip_frame, variable=flip_var["x"]),
-            "y": ttk.Checkbutton(flip_frame, variable=flip_var["y"]),
-            "z": ttk.Checkbutton(flip_frame, variable=flip_var["z"]),
+            "x": ttk.Checkbutton(axis_tools_frame, variable=flip_var["x"]),
+            "y": ttk.Checkbutton(axis_tools_frame, variable=flip_var["y"]),
+            "z": ttk.Checkbutton(axis_tools_frame, variable=flip_var["z"]),
         }
         self.inputs["flip"] = {
             "button": flip_check,
@@ -95,9 +96,14 @@ class VastInterfaceFrame(ttk.Frame):
         }
         for i, axis in enumerate(flip_check):
             flip_check[axis].grid(row=0, column=2*i)
-            ttk.Label(flip_frame, text=f"Flip {axis.upper()}").grid(row=0, column=2*i+1)
+            ttk.Label(axis_tools_frame, text=f"Flip {axis.upper()}").grid(row=0, column=2*i+1)
         
-        flip_frame.pack()
+        # set z-focus origin button
+        set_focus_button = ttk.Button(axis_tools_frame, text="Set Z-Stage Origin")
+        set_focus_button.grid(row=0, column=6, sticky=tk.NW)
+        self.buttons['set_focus'] = set_focus_button
+
+        axis_tools_frame.pack()
 
         # label = ttk.Label(self, text="VAST Interface")
         # label.grid(row=0, column=0, sticky=tk.NW)
