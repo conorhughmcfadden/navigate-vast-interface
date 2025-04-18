@@ -45,11 +45,13 @@ class VastInterfaceController(GUIController):
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
         self.set_focus_button = self.buttons['set_focus']
+        self.done_button = self.buttons['done']
 
         # variables
         self.perspective = 0
-        self.coord = [0, 0, 0, 0, 0] # (x,y,z,theta,f)
+        self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.positions = []
+        self.coord = np.zeros_like(self.stage_axes, dtype=int) # (x,y,z,theta,f,m)
         self.relative_positions = [[]]
         self.nose_position = None
         self.x_pos = 0
@@ -134,7 +136,8 @@ class VastInterfaceController(GUIController):
 
         self.path_button.configure(command=self.load_vexp)
         self.set_focus_button.configure(command=self.set_focus)
-        
+        self.done_button.configure(command=self.close)
+
     def set_focus(self):
         self.setting_focus = True
         self.perspective = 1
@@ -204,11 +207,12 @@ class VastInterfaceController(GUIController):
         self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
 
     def update_experiment_values(self):
-        if np.size(self.relative_positions):
-            self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
-            self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
-                "multiposition_count"
-            ] = len(self.relative_positions)
+        # if np.size(self.relative_positions):
+        #     # self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
+        #     self.parent_controller.model.configuration["multi_positions"] = self.relative_positions
+        #     self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
+        #         "multiposition_count"
+        #     ] = len(self.relative_positions)
         
         if self.vexp_path:
             self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
@@ -297,7 +301,7 @@ class VastInterfaceController(GUIController):
 
         tstr += "\tnose_position: "
         p0 = 0
-        if self.nose_position:
+        if self.nose_position is not None:
             tstr += self.coord2str(self.nose_position)
             p0 = self.nose_position[:3]
             tstr += "current: "
@@ -352,11 +356,16 @@ class VastInterfaceController(GUIController):
             # append nose positions to start
             if self.append_nose.get():
                 self.relative_positions = np.vstack((
-                    [0, 0, 0, 0, 0],
+                    np.zeros_like(self.stage_axes, dtype=int),
                     self.relative_positions
                 ))
 
-            self.update_multiposition_controller()
+            # send multipositions to controller with stage_axes as the header
+            self.update_multiposition_controller(
+                [[ax.upper() for ax in self.stage_axes]] + self.relative_positions.tolist()
+            )
+            
+            self.update_experiment_values()
         else:
             self.nose_position = new_position
 
@@ -398,16 +407,19 @@ class VastInterfaceController(GUIController):
 
         self.draw_fish()
 
-    def update_multiposition_controller(self):
-        self.parent_controller.multiposition_tab_controller.set_positions(self.relative_positions)
-        self.update_experiment_values()
+    def update_multiposition_controller(self, multi_positions):
+        self.parent_controller.model.configuration["multi_positions"] = multi_positions
+        self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
 
     def build_vast_popup(self, event):
         print(f"Event = {event}")
-        try:
-            self.parent_controller.plugin_controller.popup_funcs[self.plugin_name]()
-        except Exception as e:
-            print(e)
+        # try:
+        #     self.parent_controller.plugin_controller.popup_funcs[self.plugin_name]()
+        # except Exception as e:
+        #     print(e)
+
+        # reinitialize
+        self.__init__(self.view, self.parent_controller)
 
     @property
     def custom_events(self):

@@ -11,6 +11,7 @@ from navigate.model.devices.stages.synthetic import SyntheticStage
 
 DEVICE_TYPE_NAME = "stage"  # Same as in configuraion.yaml, for example "stage", "filter_wheel", "remote_focus_device"...
 DEVICE_REF_LIST = ["type", "axes", "serial_number", "axes_mapping"]  # the reference value from configuration.yaml
+SUPPORTED_DEVICE_TYPES = ["stage", "synthetic"]
 
 def load_device(hardware_configuration, is_synthetic=False, **kwargs):
     """Build device connection.
