@@ -7,11 +7,10 @@ from multiprocessing.managers import ListProxy
 # Navigate specific imports
 from navigate.tools.common_functions import load_module_from_file
 from navigate.model.device_startup_functions import device_not_found, auto_redial, DummyDeviceConnection
-from navigate.model.devices.stages.synthetic import SyntheticStage
 
 DEVICE_TYPE_NAME = "stage"  # Same as in configuraion.yaml, for example "stage", "filter_wheel", "remote_focus_device"...
 DEVICE_REF_LIST = ["type", "axes", "serial_number", "axes_mapping"]  # the reference value from configuration.yaml
-SUPPORTED_DEVICE_TYPES = ["stage", "synthetic"]
+SUPPORTED_DEVICE_TYPES = ["vast", "synthetic"]
 
 def load_device(hardware_configuration, is_synthetic=False, **kwargs):
     """Build device connection.
