@@ -21,6 +21,8 @@ import xml.etree.ElementTree as ET
 
 VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
 
+AXIS_MAPPING = ['x', 'y', 'm']
+
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller=None):
@@ -59,6 +61,8 @@ class VastInterfaceController(GUIController):
         self.background = None
         self.locked = False
         self.setting_focus = False
+
+        self.ax_i = [(np.array(self.stage_axes) == ax).argmax() for ax in AXIS_MAPPING]
 
         # flip
         self.flip = self.widgets["flip"]["variable"]
@@ -349,9 +353,9 @@ class VastInterfaceController(GUIController):
 
             self.relative_positions = np.zeros(np.shape(self.positions))
             for i, p in enumerate(self.positions):
-                self.relative_positions[i,0] = do_flip[0] * (p[0] - self.nose_position[0]) * VAST_UM_PIX
-                self.relative_positions[i,1] = do_flip[1] * (p[1] - self.nose_position[1]) * VAST_UM_PIX
-                self.relative_positions[i,4] = do_flip[2] * (p[2] - self.z_focus_pos) * VAST_UM_PIX
+                self.relative_positions[i,self.ax_i[0]] = do_flip[0] * (p[0] - self.nose_position[0]) * VAST_UM_PIX
+                self.relative_positions[i,self.ax_i[1]] = do_flip[1] * (p[1] - self.nose_position[1]) * VAST_UM_PIX
+                self.relative_positions[i,self.ax_i[2]] = do_flip[2] * (p[2] - self.z_focus_pos)      * VAST_UM_PIX
 
             # append nose positions to start
             if self.append_nose.get():
