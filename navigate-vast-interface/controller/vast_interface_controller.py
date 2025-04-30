@@ -48,6 +48,7 @@ class VastInterfaceController(GUIController):
         self.path_button = self.buttons['path']
         self.set_focus_button = self.buttons['set_focus']
         self.done_button = self.buttons['done']
+        self.clear_button = self.buttons['clear']
 
         # variables
         self.perspective = 0
@@ -141,6 +142,7 @@ class VastInterfaceController(GUIController):
         self.path_button.configure(command=self.load_vexp)
         self.set_focus_button.configure(command=self.set_focus)
         self.done_button.configure(command=self.close)
+        self.clear_button.configure(command=self.initialize)
 
     def set_focus(self):
         self.setting_focus = True

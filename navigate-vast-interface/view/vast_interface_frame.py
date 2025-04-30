@@ -118,6 +118,11 @@ class VastInterfaceFrame(ttk.Frame):
         done_button.grid(row=0, column=9, sticky=tk.NW)
         self.buttons["done"] = done_button
 
+        # set z-focus origin button
+        clear_button = ttk.Button(axis_tools_frame, text="Clear All")
+        clear_button.grid(row=0, column=10, sticky=tk.NW)
+        self.buttons["clear"] = clear_button
+
         axis_tools_frame.pack()
 
         # label = ttk.Label(self, text="VAST Interface")
