@@ -14,6 +14,7 @@ from skimage.exposure import adjust_gamma
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
+from navigate.controller.controller import Controller
 from navigate.tools.file_functions import load_yaml_file
 
 from navigate.tools.xml_tools import parse_xml
@@ -49,6 +50,8 @@ class VastInterfaceController(GUIController):
         self.set_focus_button = self.buttons['set_focus']
         self.done_button = self.buttons['done']
         self.clear_button = self.buttons['clear']
+        self.save_pos_button = self.buttons['save_pos']
+        self.flip_yz_button = self.buttons['flip_yz']
 
         # variables
         self.perspective = 0
@@ -62,6 +65,7 @@ class VastInterfaceController(GUIController):
         self.background = None
         self.locked = False
         self.setting_focus = False
+        self.working_dir = None
 
         self.ax_i = [(np.array(self.stage_axes) == ax).argmax() for ax in AXIS_MAPPING]
 
@@ -99,6 +103,9 @@ class VastInterfaceController(GUIController):
         self.n_views = len(recent_views)
         self.gammas = [1.0] * len(self.channel_names)
 
+        # get working dir
+        self.working_dir = Path(self.view_names[0]).parent.resolve()
+
         # load fish images
         self.images = []
 
@@ -106,8 +113,8 @@ class VastInterfaceController(GUIController):
             new_view = {}
             for chan in self.channel_names:
                 new_view[chan] = self.load_image(
-                    dir=self.view_names[self.n_views - v - 1],
-                    # dir=self.view_names[v],
+                    # dir=self.view_names[self.n_views - v - 1],
+                    dir=self.view_names[v],
                     chan=chan,
                     slice=slice
                 )
@@ -143,6 +150,26 @@ class VastInterfaceController(GUIController):
         self.set_focus_button.configure(command=self.set_focus)
         self.done_button.configure(command=self.close)
         self.clear_button.configure(command=self.initialize)
+        self.save_pos_button.configure(command=self.save_positions)
+        self.flip_yz_button.configure(command=self.flip_yz)
+
+    def save_positions(self):
+        output = np.vstack((
+            np.asarray(self.nose_position),
+            np.asarray(self.positions)
+        ))
+
+        print(f"Saving...\n{output}\n... to {self.working_dir}")
+
+        np.savetxt(
+            fname = os.path.join(self.working_dir, f"positions.txt"),
+            X = output,
+            delimiter = '\t'
+        )
+
+    def flip_yz(self):
+        self.images.reverse()
+        self.draw_fish()
 
     def set_focus(self):
         self.setting_focus = True
