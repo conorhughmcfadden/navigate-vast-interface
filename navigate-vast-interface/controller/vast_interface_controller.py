@@ -24,6 +24,50 @@ VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
 
 AXIS_MAPPING = ['x', 'y', 'm']
 
+class Test(GUIController):
+
+    def __init__(self, view, parent_controller=None):
+        super().__init__(view, parent_controller)
+
+        # get plugin name to call events from parent_controller
+        config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
+        plugin_config = load_yaml_file(config_path)
+        self.plugin_name = plugin_config['name']
+
+        self.initialize()
+
+        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
+
+    def initialize(self):
+        self.variables = self.view.get_variables()
+        self.widgets = self.view.get_widgets()
+        self.buttons = self.view.buttons
+
+        # view elements
+        self.fish_widget = self.widgets['fish_widget']
+        self.text_var = self.variables['text']
+        self.vexp_path_var = self.variables['path']
+        self.path_button = self.buttons['path']
+        self.set_focus_button = self.buttons['set_focus']
+        self.done_button = self.buttons['done']
+        self.clear_button = self.buttons['clear']
+        self.save_pos_button = self.buttons['save_pos']
+        self.flip_yz_button = self.buttons['flip_yz']
+
+        # variables
+        self.stage_axes = self.parent_controller.configuration_controller.stage_axes
+        self.positions = []
+        self.coord = np.zeros_like(self.stage_axes, dtype=int) # (x,y,z,theta,f,m)
+        self.relative_positions = [[]]
+        self.nose_position = None
+        self.x_pos = 0
+        self.y_pos = 0
+        self.background = None
+        self.locked = False
+        self.setting_focus = False
+        self.working_dir = None        
+
+
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller=None):
