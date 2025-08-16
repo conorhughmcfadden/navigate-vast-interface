@@ -1,14 +1,15 @@
 # Standard library imports
 import os
 from pathlib import Path
+import cv2
 import numpy as np
-import tkinter as tk
+# import tkinter as tk
 from tkinter import filedialog
 from copy import deepcopy
 
 # Third party imports
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
+# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# from matplotlib.figure import Figure
 from tifffile import tifffile
 from skimage.exposure import adjust_gamma
 
@@ -26,7 +27,7 @@ AXIS_MAPPING = ['x', 'y', 'm']
 
 class VastInterfaceController(GUIController):
 
-    def __init__(self, view, parent_controller=None):
+    def __init__(self, view, parent_controller : Controller = None):
         super().__init__(view, parent_controller)
 
         # get plugin name to call events from parent_controller
