@@ -3,13 +3,10 @@ import os
 from pathlib import Path
 import cv2
 import numpy as np
-# import tkinter as tk
 from tkinter import filedialog
 from copy import deepcopy
 
 # Third party imports
-# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-# from matplotlib.figure import Figure
 from tifffile import tifffile
 from skimage.exposure import adjust_gamma
 
@@ -24,6 +21,39 @@ import xml.etree.ElementTree as ET
 VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
 
 AXIS_MAPPING = ['x', 'y', 'm']
+
+"""
+Extended depth of field...
+Maybe make into a feature in /develop/ later on.
+"""
+def extended_depth_of_field(stack):
+
+    # register "src" to "trg"
+    def _reg(src, trg, M=None):
+        rows, cols = trg.shape
+
+        if M is None:
+            (dx, dy), _ = cv2.phaseCorrelate(src, trg)
+
+            M = np.array(
+                [[1, 0, dx],
+                [0, 1, dy]],
+                dtype=np.float64
+            )
+            return cv2.warpAffine(src, M, (cols, rows)), M
+        else:
+            return cv2.warpAffine(src, M, (cols, rows))
+
+    # register full stack to index "ref_slice"
+    def _reg_stack(x, ref_slice=-1):
+
+        for z in range(len(x) - int(ref_slice < 0)):
+            if z == ref_slice:
+                continue
+
+            x[z] = _reg(x[z], x[ref_slice])
+
+        return x
 
 class VastInterfaceController(GUIController):
 
