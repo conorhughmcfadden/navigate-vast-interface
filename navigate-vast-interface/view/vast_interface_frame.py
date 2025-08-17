@@ -145,6 +145,18 @@ class VastInterfaceFrame(ttk.Frame):
         flip_yz_button.grid(row=0, column=12, sticky=tk.NW)
         self.buttons["flip_yz"] = flip_yz_button
 
+        # do projection
+        project_var = tk.BooleanVar(value=False)
+        project_check = ttk.Checkbutton(axis_tools_frame, variable=project_var)
+        self.inputs["project"] = {
+            'button': project_check,
+            'variable': project_var
+        }
+        project_check.grid(row=0, column=13, sticky=tk.NW)
+        ttk.Label(axis_tools_frame, text="Projection").grid(
+            row=0, column=14, sticky=tk.NW
+        )
+
         axis_tools_frame.pack()
 
         # label = ttk.Label(self, text="VAST Interface")

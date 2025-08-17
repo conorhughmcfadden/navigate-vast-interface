@@ -151,6 +151,10 @@ class VastInterfaceController(GUIController):
         self.flip = self.widgets["flip"]["variable"]
         self.flip_check = self.widgets["flip"]["button"]
 
+        # projection
+        self.project = self.widgets["project"]["variable"]
+        self.project_check = self.widgets["project"]["button"]
+
         for axis in self.flip_check:
             self.flip_check[axis].configure(command=self.set_flip_experiment)
 
@@ -247,6 +251,7 @@ class VastInterfaceController(GUIController):
         self.clear_button.configure(command=self.initialize)
         self.save_pos_button.configure(command=self.save_positions)
         self.flip_yz_button.configure(command=self.flip_yz)
+        self.project_check.configure(command=self.draw_fish)
 
     def save_positions(self):
         output = np.vstack((
@@ -381,8 +386,10 @@ class VastInterfaceController(GUIController):
         # initialize plot
         chan = self.channel_names[self.curr_channel]
         
-        # image_to_display = self.images[self.perspective][chan][self.slice]
-        image_to_display = self.projections['edof'][self.perspective][chan]
+        if self.project.get():
+            image_to_display = self.projections['edof'][self.perspective][chan]
+        else:
+            image_to_display = self.images[self.perspective][chan][self.slice]
 
         ax.imshow(
             adjust_gamma(image_to_display, self.gammas[self.curr_channel]),
@@ -517,14 +524,36 @@ class VastInterfaceController(GUIController):
             self.nose_position = new_position
 
     def key_press(self, event):
+        # if event.key == 'down':
+        #     self.slice = np.min([self.n_slices - 1, self.slice + 1])
+        #     self.z_scrollbar.set(self.slice)
+        #     self.draw_fish()
+        # elif event.key == 'up':
+        #     self.slice = np.max([0, self.slice - 1])
+        #     self.z_scrollbar.set(self.slice)
+        #     self.draw_fish()
+        
+        try:
+            key_num = int(event.key)
+        except ValueError:
+            return
+
         for c, _ in enumerate(self.channel_names):
-            if int(event.key) == (c+1):
+            if key_num == (c+1):
                 self.curr_channel = c
                 self.draw_fish()
 
     def mouse_wheel(self, event):
-        self.gammas[self.curr_channel] += event.step * 0.02
-        self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
+        # self.gammas[self.curr_channel] += event.step * 0.02
+        # self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
+        
+        self.slice = np.clip(
+            self.slice - int(np.clip(event.step, a_min=-1, a_max=1)), 
+            a_min=0, 
+            a_max=self.n_slices-1
+            )
+        
+        self.z_scrollbar.set(self.slice)
         self.draw_fish()
 
     def on_click(self, event):
