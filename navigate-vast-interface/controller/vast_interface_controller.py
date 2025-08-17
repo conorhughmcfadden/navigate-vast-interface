@@ -27,34 +27,77 @@ AXIS_MAPPING = ['x', 'y', 'm']
 Extended depth of field...
 Maybe make into a feature in /develop/ later on.
 """
-def extended_depth_of_field(stack):
+def extended_depth_of_field(stack : dict, ksize=5, bsize=11, order=2, ref_chan="", ref_z=-1, dark_ref_bg=True):
 
-    # register "src" to "trg"
-    def _reg(src, trg, M=None):
-        rows, cols = trg.shape
+    # make sure we're in float64
+    stack = {chan: np.float64(stack[chan]) for chan in stack}
 
-        if M is None:
-            (dx, dy), _ = cv2.phaseCorrelate(src, trg)
+    bit_depth_ceil = stack[ref_chan].max()
+    # switch to dark bg
+    if not dark_ref_bg:
+        stack[ref_chan] = bit_depth_ceil - stack[ref_chan]
 
-            M = np.array(
-                [[1, 0, dx],
+    # func : tmat from "src" to "trg"
+    def _tmat(src, trg):
+        
+        (dx, dy), _ = cv2.phaseCorrelate(src, trg)
+
+        return np.array(
+            [[1, 0, dx],
                 [0, 1, dy]],
-                dtype=np.float64
-            )
-            return cv2.warpAffine(src, M, (cols, rows)), M
-        else:
-            return cv2.warpAffine(src, M, (cols, rows))
+            dtype=np.float64
+        )
 
-    # register full stack to index "ref_slice"
-    def _reg_stack(x, ref_slice=-1):
+    # get tmats for all slices in ref_chan
+    ref_slice = stack[ref_chan][ref_z]
+    tmats = [_tmat(s, ref_slice) for s in stack[ref_chan]]
 
-        for z in range(len(x) - int(ref_slice < 0)):
-            if z == ref_slice:
-                continue
+    # func : register a full stack
+    def _reg_stack(x : np.ndarray):
+        _, rows, cols = x.shape
+        return np.array([
+            cv2.warpAffine(x[i], tmats[i], (cols, rows))
+            for i in range(len(x))
+        ])
 
-            x[z] = _reg(x[z], x[ref_slice])
+    # register all channels
+    registered = {chan: _reg_stack(stack[chan]) for chan in stack}
 
-        return x
+    # get sharp indices based on ref_chan
+    inds = np.array(
+        [cv2.Sobel(
+            z,
+            ddepth=cv2.CV_64F,
+            dx=order,
+            dy=order,
+            ksize=ksize,
+            borderType=cv2.BORDER_REFLECT)
+            for z in registered[ref_chan]]
+    ).argmax(0)
+
+    # optional index blurring
+    inds = cv2.blur(inds, ksize=[bsize]*2)
+
+    # func : apply sharpness indices to stack
+    def _apply_indices(x : np.ndarray):
+        z, h, w = x.shape
+
+        temp = x.reshape((z, -1)).transpose()
+        temp = temp[np.arange(len(temp)), inds.ravel()]
+
+        return temp.reshape((h, w))
+
+    # apply indices to each (registered) channel
+    output = {chan: _apply_indices(registered[chan]) for chan in registered}
+
+    # switch back to light bg (if needed)
+    if not dark_ref_bg:
+        output[ref_chan] = bit_depth_ceil - output[ref_chan]
+
+    # convert back to np.uint16
+    output = {chan: np.uint16(output[chan]) for chan in output}
+
+    return output
 
 class VastInterfaceController(GUIController):
 
@@ -100,6 +143,8 @@ class VastInterfaceController(GUIController):
         self.setting_focus = False
         self.working_dir = None
 
+        self.is_stacking = True
+
         self.ax_i = [(np.array(self.stage_axes) == ax).argmax() for ax in AXIS_MAPPING]
 
         # flip
@@ -128,7 +173,7 @@ class VastInterfaceController(GUIController):
         self.vexp = self.parse_vexp()
 
         # get channel names
-        recent_chans, recent_views, slice = self.parse_most_recent_well()
+        recent_chans, recent_views = self.parse_most_recent_well()
 
         self.channel_names = recent_chans
         self.view_names = recent_views
@@ -142,8 +187,6 @@ class VastInterfaceController(GUIController):
         # load fish images
         self.images = []
 
-        self.slice = 3
-
         for v in range(self.n_views):
             new_view = {}
             for chan in self.channel_names:
@@ -156,7 +199,23 @@ class VastInterfaceController(GUIController):
 
         self.n_slices, self.l, self.w = self.images[0][self.channel_names[0]].shape
 
-        self.z_scrollbar.configure(from_=0, to=self.n_slices, command=self.z_on_update)
+        self.slice = int(self.n_slices/2)
+        self.z_scrollbar.set(self.slice)
+
+        # yStack step size
+        self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
+        self.z_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.z_on_update)
+
+        # compute extended depth of field
+        self.projections = {
+            'edof': [extended_depth_of_field(
+                        self.images[v], 
+                        ref_chan="",
+                        ksize=5,
+                        bsize=11,
+                        dark_ref_bg=False
+                    ) for v in range(self.n_views)]
+        }
 
         # draw the fish widget
         self.draw_fish()
@@ -204,7 +263,7 @@ class VastInterfaceController(GUIController):
         )
 
     def z_on_update(self, val):
-        z_slice = int(np.round(float(val)))
+        z_slice = int(val)
 
         if z_slice != self.slice:
             self.slice = z_slice
@@ -265,9 +324,9 @@ class VastInterfaceController(GUIController):
         recent_views.sort()
 
         # middle slice index
-        slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
+        # slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
 
-        return recent_chans, recent_views, slice
+        return recent_chans, recent_views
 
     def load_vexp(self):
         vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
@@ -321,8 +380,12 @@ class VastInterfaceController(GUIController):
 
         # initialize plot
         chan = self.channel_names[self.curr_channel]
+        
+        # image_to_display = self.images[self.perspective][chan][self.slice]
+        image_to_display = self.projections['edof'][self.perspective][chan]
+
         ax.imshow(
-            adjust_gamma(self.images[self.perspective][chan][self.slice], self.gammas[self.curr_channel]),
+            adjust_gamma(image_to_display, self.gammas[self.curr_channel]),
             cmap='gray'
         )
 

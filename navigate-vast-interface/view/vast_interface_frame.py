@@ -17,7 +17,7 @@ class FishWidget:
 
     def __init__(self, master):
 
-        self.fig = Figure(figsize=(10,4))
+        self.fig = Figure(figsize=(14,5))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
@@ -66,7 +66,12 @@ class VastInterfaceFrame(ttk.Frame):
         self.fish_widget = FishWidget(self.fish_frame)
         self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
         
-        self.z_scrollbar = ttk.Scale(self.fish_frame, orient=tk.VERTICAL)
+        self.z_scrollbar = tk.Scale(
+            self.fish_frame, 
+            orient=tk.VERTICAL,
+            tickinterval=1,
+            label="Z"
+            )
         self.z_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
 
         self.inputs['fish_widget'] = self.fish_widget
