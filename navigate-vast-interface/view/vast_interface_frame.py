@@ -60,10 +60,17 @@ class VastInterfaceFrame(ttk.Frame):
         self.text_label = ttk.Label(self, textvariable=self.variables['text'])
         self.text_label.pack()
 
-        self.fish_widget = FishWidget(self)
-        self.fish_widget.canvas.get_tk_widget().pack()
+        self.fish_frame = ttk.Frame(self)
+        self.fish_frame.pack()
+
+        self.fish_widget = FishWidget(self.fish_frame)
+        self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
         
+        self.z_scrollbar = ttk.Scale(self.fish_frame, orient=tk.VERTICAL)
+        self.z_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+
         self.inputs['fish_widget'] = self.fish_widget
+        self.inputs['z_scrollbar'] = self.z_scrollbar
 
         load_expt_frame = ttk.Frame(self)
 

@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import cv2
+from glob import glob
 import numpy as np
 from tkinter import filedialog
 from copy import deepcopy
@@ -75,6 +76,7 @@ class VastInterfaceController(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
+        self.z_scrollbar = self.widgets['z_scrollbar']
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
@@ -140,18 +142,21 @@ class VastInterfaceController(GUIController):
         # load fish images
         self.images = []
 
+        self.slice = 3
+
         for v in range(self.n_views):
             new_view = {}
             for chan in self.channel_names:
-                new_view[chan] = self.load_image(
+                new_view[chan] = self.load_stack(
                     # dir=self.view_names[self.n_views - v - 1],
                     dir=self.view_names[v],
                     chan=chan,
-                    slice=slice
                 )
             self.images += [new_view]
 
-        self.l, self.w = self.images[0][self.channel_names[0]].shape
+        self.n_slices, self.l, self.w = self.images[0][self.channel_names[0]].shape
+
+        self.z_scrollbar.configure(from_=0, to=self.n_slices, command=self.z_on_update)
 
         # draw the fish widget
         self.draw_fish()
@@ -197,6 +202,13 @@ class VastInterfaceController(GUIController):
             X = output,
             delimiter = '\t'
         )
+
+    def z_on_update(self, val):
+        z_slice = int(np.round(float(val)))
+
+        if z_slice != self.slice:
+            self.slice = z_slice
+            self.draw_fish()
 
     def flip_yz(self):
         self.images.reverse()
@@ -284,6 +296,14 @@ class VastInterfaceController(GUIController):
         if self.z_focus_pos:
             self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
 
+    def load_stack(self, dir, chan=""):
+        im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
+        im_list.sort()
+
+        slices = np.array([tifffile.imread(f) for f in im_list])
+
+        return np.flip(slices, axis=1)
+
     def load_image(self, dir, chan="", slice=3):
         im_path = os.path.join(
             dir,
@@ -302,7 +322,7 @@ class VastInterfaceController(GUIController):
         # initialize plot
         chan = self.channel_names[self.curr_channel]
         ax.imshow(
-            adjust_gamma(self.images[self.perspective][chan], self.gammas[self.curr_channel]),
+            adjust_gamma(self.images[self.perspective][chan][self.slice], self.gammas[self.curr_channel]),
             cmap='gray'
         )
 
