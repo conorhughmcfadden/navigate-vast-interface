@@ -65,17 +65,28 @@ class VastInterfaceFrame(ttk.Frame):
 
         self.fish_widget = FishWidget(self.fish_frame)
         self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
-        
-        self.z_scrollbar = tk.Scale(
+
+        # Theta scrollbar
+        self.theta_scrollbar = tk.Scale(
             self.fish_frame, 
             orient=tk.VERTICAL,
             tickinterval=1,
-            label="Z"
+            label="Theta"
             )
-        self.z_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+        self.theta_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+        self.inputs['theta_scrollbar'] = self.theta_scrollbar
+
+        # Y scrollbar
+        self.y_scrollbar = tk.Scale(
+            self.fish_frame, 
+            orient=tk.VERTICAL,
+            tickinterval=1,
+            label="Y"
+            )
+        self.y_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+        self.inputs['y_scrollbar'] = self.y_scrollbar
 
         self.inputs['fish_widget'] = self.fish_widget
-        self.inputs['z_scrollbar'] = self.z_scrollbar
 
         load_expt_frame = ttk.Frame(self)
 

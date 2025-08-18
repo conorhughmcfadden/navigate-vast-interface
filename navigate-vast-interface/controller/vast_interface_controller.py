@@ -103,7 +103,9 @@ class vector(dict):
     """
         Helper dict-like class to do vector operations with labelled axes.
     """
-    def __init__(self, d):
+    def __init__(self, d, val=0.):
+        if isinstance(d, list):
+            d = {k: val for k in d}
         super().__init__(d)
     
     def __sub__(self, other):
@@ -162,21 +164,147 @@ class VastInterfaceController(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
-        self.z_scrollbar = self.widgets['z_scrollbar']
+        self.y_scrollbar = self.widgets['y_scrollbar']
+        self.theta_scrollbar = self.widgets['theta_scrollbar']
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
-        # self.set_focus_button = self.buttons['set_focus']
         self.done_button = self.buttons['done']
         self.clear_button = self.buttons['clear']
         self.save_pos_button = self.buttons['save_pos']
-        # self.flip_yz_button = self.buttons['flip_yz']        
-
+        
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
-        self.current_position = {ax: 0. for ax in self.stage_axes}
+        self.current_position = vector(self.stage_axes, val=0.)
+        self.global_origin = vector(self.stage_axes, val=0.)
 
+        self.annotated_positions = []
+
+        # crosshair positions on image
+        self.x_ = 0
+        self.z_ = 0
+
+        self.working_dir = None
+
+        # flip stuff
+
+        # projection stuff
+
+        # focus pos stuff?
+
+        # append nose...
+
+        # get the vexp
+        self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
+        self.vexp_path_var.set(self.vexp_path)
+        self.vexp = self.parse_vexp()        
+
+        # get channel names and view folders
+        (self.channel_names, self.view_names) = self.parse_most_recent_well()
+
+        self.curr_channel_idx = 0
+        self.n_views = len(self.view_names)
+
+        # the working dir will be parent of views
+        self.working_dir = Path(self.view_names[0]).parent.resolve()
+
+        # load images: [chan, view, slice, x, y]
+        self.images = {}
+        for chan in self.channel_names:
+            self.images[chan] = []
+            for view in self.view_names:
+                self.images[chan].append(
+                    self.load_stack(view, chan)
+                )
         
+        # store stack dimensions
+        self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
+
+        # set scrollbar ranges
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.set_y)
+        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=self.set_theta)
+
+        self.draw_fish()
+
+    def set_y(self, val):
+        self.current_position['y'] = int(val)
+        self.draw_fish()
+
+    def set_theta(self, val):
+        self.current_position['theta'] = int(val)
+        self.draw_fish()
+
+    def draw_fish(self):
+
+        # clear the plot
+        ax = self.fish_widget.ax
+        ax.clear()
+
+        print(self.current_position)
+
+        # index the image to display
+        c_idx = self.channel_names[self.curr_channel_idx]
+        v_idx = int(self.current_position['theta'])
+        y_idx = int(self.current_position['y'])
+
+        image_to_display = self.images[c_idx][v_idx][y_idx]
+
+        ax.imshow(image_to_display, cmap='gray')
+
+        # FINISH: set up canvas
+        self.fish_widget.canvas.draw()
+        self.background = self.fish_widget.canvas.copy_from_bbox(
+            ax.bbox
+        )
+        
+    @staticmethod
+    def load_stack(dir, chan):
+        """
+            Loads a single channel from /dir/
+
+            Output dim: [slice, row, col]
+        """
+        im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
+        im_list.sort()
+
+        slices = np.array([tifffile.imread(f) for f in im_list])
+
+        return np.flip(slices, axis=1)
+
+    def parse_vexp(self):
+        tree = ET.parse(self.vexp_path)
+        return parse_xml(tree.getroot())        
+
+    def parse_most_recent_well(self):
+        # walk the VAST autostore path
+        walk = os.walk(Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent)
+
+        # get only Well folders containing images
+        well_items = []
+        for item in walk:
+            if 'Well' in item[0]:
+                if item[-1]:
+                    well_items += [item]
+
+        # get recent channels and views
+        recent_chans = []
+        recent_views = []
+        for item in well_items[::-1][:2]:
+            for im in item[-1]:
+                chan = im.split('_')[0]
+                view = item[0]
+                if chan not in recent_chans:
+                    recent_chans += [chan]
+                if view not in recent_views:
+                    recent_views += [view]
+
+        recent_chans.sort()
+        recent_views.sort()
+
+        # middle slice index
+        # slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
+
+        return recent_chans, recent_views
 
 class Dummy(GUIController):
 
@@ -198,7 +326,7 @@ class Dummy(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
-        self.z_scrollbar = self.widgets['z_scrollbar']
+        self.y_scrollbar = self.widgets['y_scrollbar']
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
@@ -230,15 +358,15 @@ class Dummy(GUIController):
         self.flip = self.widgets["flip"]["variable"]
         self.flip_check = self.widgets["flip"]["button"]
 
-        # projection
-        self.project = self.widgets["project"]["variable"]
-        self.project_check = self.widgets["project"]["button"]
-
         for axis in self.flip_check:
             self.flip_check[axis].configure(command=self.set_flip_experiment)
 
         self.pull_flip_from_experiment()
-
+        
+        # projection
+        self.project = self.widgets["project"]["variable"]
+        self.project_check = self.widgets["project"]["button"]
+        
         # focus pos
         self.z_focus_pos = 0
         try:
@@ -283,11 +411,11 @@ class Dummy(GUIController):
         self.n_slices, self.l, self.w = self.images[0][self.channel_names[0]].shape
 
         self.slice = int(self.n_slices/2)
-        self.z_scrollbar.set(self.slice)
+        self.y_scrollbar.set(self.slice)
 
         # yStack step size
         self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
-        self.z_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.z_on_update)
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.z_on_update)
 
         # compute extended depth of field
         self.projections = {
@@ -605,11 +733,11 @@ class Dummy(GUIController):
     def key_press(self, event):
         # if event.key == 'down':
         #     self.slice = np.min([self.n_slices - 1, self.slice + 1])
-        #     self.z_scrollbar.set(self.slice)
+        #     self.y_scrollbar.set(self.slice)
         #     self.draw_fish()
         # elif event.key == 'up':
         #     self.slice = np.max([0, self.slice - 1])
-        #     self.z_scrollbar.set(self.slice)
+        #     self.y_scrollbar.set(self.slice)
         #     self.draw_fish()
         
         try:
@@ -632,7 +760,7 @@ class Dummy(GUIController):
             a_max=self.n_slices-1
             )
         
-        self.z_scrollbar.set(self.slice)
+        self.y_scrollbar.set(self.slice)
         self.draw_fish()
 
     def on_click(self, event):
