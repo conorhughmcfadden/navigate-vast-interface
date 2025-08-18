@@ -17,7 +17,7 @@ class FishWidget:
 
     def __init__(self, master):
 
-        self.fig = Figure(figsize=(10,4))
+        self.fig = Figure(figsize=(14,5))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
@@ -60,10 +60,22 @@ class VastInterfaceFrame(ttk.Frame):
         self.text_label = ttk.Label(self, textvariable=self.variables['text'])
         self.text_label.pack()
 
-        self.fish_widget = FishWidget(self)
-        self.fish_widget.canvas.get_tk_widget().pack()
+        self.fish_frame = ttk.Frame(self)
+        self.fish_frame.pack()
+
+        self.fish_widget = FishWidget(self.fish_frame)
+        self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
         
+        self.z_scrollbar = tk.Scale(
+            self.fish_frame, 
+            orient=tk.VERTICAL,
+            tickinterval=1,
+            label="Z"
+            )
+        self.z_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+
         self.inputs['fish_widget'] = self.fish_widget
+        self.inputs['z_scrollbar'] = self.z_scrollbar
 
         load_expt_frame = ttk.Frame(self)
 
@@ -132,6 +144,18 @@ class VastInterfaceFrame(ttk.Frame):
         flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")
         flip_yz_button.grid(row=0, column=12, sticky=tk.NW)
         self.buttons["flip_yz"] = flip_yz_button
+
+        # do projection
+        project_var = tk.BooleanVar(value=False)
+        project_check = ttk.Checkbutton(axis_tools_frame, variable=project_var)
+        self.inputs["project"] = {
+            'button': project_check,
+            'variable': project_var
+        }
+        project_check.grid(row=0, column=13, sticky=tk.NW)
+        ttk.Label(axis_tools_frame, text="Projection").grid(
+            row=0, column=14, sticky=tk.NW
+        )
 
         axis_tools_frame.pack()
 

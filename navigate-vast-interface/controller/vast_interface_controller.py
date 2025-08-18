@@ -2,14 +2,12 @@
 import os
 from pathlib import Path
 import cv2
+from glob import glob
 import numpy as np
-# import tkinter as tk
 from tkinter import filedialog
 from copy import deepcopy
 
 # Third party imports
-# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-# from matplotlib.figure import Figure
 from tifffile import tifffile
 from skimage.exposure import adjust_gamma
 
@@ -24,6 +22,82 @@ import xml.etree.ElementTree as ET
 VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
 
 AXIS_MAPPING = ['x', 'y', 'm']
+
+"""
+Extended depth of field...
+Maybe make into a feature in /develop/ later on.
+"""
+def extended_depth_of_field(stack : dict, ksize=5, bsize=11, order=2, ref_chan="", ref_z=-1, dark_ref_bg=True):
+
+    # make sure we're in float64
+    stack = {chan: np.float64(stack[chan]) for chan in stack}
+
+    bit_depth_ceil = stack[ref_chan].max()
+    # switch to dark bg
+    if not dark_ref_bg:
+        stack[ref_chan] = bit_depth_ceil - stack[ref_chan]
+
+    # func : tmat from "src" to "trg"
+    def _tmat(src, trg):
+        
+        (dx, dy), _ = cv2.phaseCorrelate(src, trg)
+
+        return np.array(
+            [[1, 0, dx],
+                [0, 1, dy]],
+            dtype=np.float64
+        )
+
+    # get tmats for all slices in ref_chan
+    ref_slice = stack[ref_chan][ref_z]
+    tmats = [_tmat(s, ref_slice) for s in stack[ref_chan]]
+
+    # func : register a full stack
+    def _reg_stack(x : np.ndarray):
+        _, rows, cols = x.shape
+        return np.array([
+            cv2.warpAffine(x[i], tmats[i], (cols, rows))
+            for i in range(len(x))
+        ])
+
+    # register all channels
+    registered = {chan: _reg_stack(stack[chan]) for chan in stack}
+
+    # get sharp indices based on ref_chan
+    inds = np.array(
+        [cv2.Sobel(
+            z,
+            ddepth=cv2.CV_64F,
+            dx=order,
+            dy=order,
+            ksize=ksize,
+            borderType=cv2.BORDER_REFLECT)
+            for z in registered[ref_chan]]
+    ).argmax(0)
+
+    # optional index blurring
+    inds = cv2.blur(inds, ksize=[bsize]*2)
+
+    # func : apply sharpness indices to stack
+    def _apply_indices(x : np.ndarray):
+        z, h, w = x.shape
+
+        temp = x.reshape((z, -1)).transpose()
+        temp = temp[np.arange(len(temp)), inds.ravel()]
+
+        return temp.reshape((h, w))
+
+    # apply indices to each (registered) channel
+    output = {chan: _apply_indices(registered[chan]) for chan in registered}
+
+    # switch back to light bg (if needed)
+    if not dark_ref_bg:
+        output[ref_chan] = bit_depth_ceil - output[ref_chan]
+
+    # convert back to np.uint16
+    output = {chan: np.uint16(output[chan]) for chan in output}
+
+    return output
 
 class VastInterfaceController(GUIController):
 
@@ -45,6 +119,7 @@ class VastInterfaceController(GUIController):
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
+        self.z_scrollbar = self.widgets['z_scrollbar']
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
@@ -68,11 +143,17 @@ class VastInterfaceController(GUIController):
         self.setting_focus = False
         self.working_dir = None
 
+        self.is_stacking = True
+
         self.ax_i = [(np.array(self.stage_axes) == ax).argmax() for ax in AXIS_MAPPING]
 
         # flip
         self.flip = self.widgets["flip"]["variable"]
         self.flip_check = self.widgets["flip"]["button"]
+
+        # projection
+        self.project = self.widgets["project"]["variable"]
+        self.project_check = self.widgets["project"]["button"]
 
         for axis in self.flip_check:
             self.flip_check[axis].configure(command=self.set_flip_experiment)
@@ -96,7 +177,7 @@ class VastInterfaceController(GUIController):
         self.vexp = self.parse_vexp()
 
         # get channel names
-        recent_chans, recent_views, slice = self.parse_most_recent_well()
+        recent_chans, recent_views = self.parse_most_recent_well()
 
         self.channel_names = recent_chans
         self.view_names = recent_views
@@ -113,15 +194,32 @@ class VastInterfaceController(GUIController):
         for v in range(self.n_views):
             new_view = {}
             for chan in self.channel_names:
-                new_view[chan] = self.load_image(
+                new_view[chan] = self.load_stack(
                     # dir=self.view_names[self.n_views - v - 1],
                     dir=self.view_names[v],
                     chan=chan,
-                    slice=slice
                 )
             self.images += [new_view]
 
-        self.l, self.w = self.images[0][self.channel_names[0]].shape
+        self.n_slices, self.l, self.w = self.images[0][self.channel_names[0]].shape
+
+        self.slice = int(self.n_slices/2)
+        self.z_scrollbar.set(self.slice)
+
+        # yStack step size
+        self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
+        self.z_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.z_on_update)
+
+        # compute extended depth of field
+        self.projections = {
+            'edof': [extended_depth_of_field(
+                        self.images[v], 
+                        ref_chan="",
+                        ksize=5,
+                        bsize=11,
+                        dark_ref_bg=False
+                    ) for v in range(self.n_views)]
+        }
 
         # draw the fish widget
         self.draw_fish()
@@ -153,6 +251,7 @@ class VastInterfaceController(GUIController):
         self.clear_button.configure(command=self.initialize)
         self.save_pos_button.configure(command=self.save_positions)
         self.flip_yz_button.configure(command=self.flip_yz)
+        self.project_check.configure(command=self.draw_fish)
 
     def save_positions(self):
         output = np.vstack((
@@ -167,6 +266,13 @@ class VastInterfaceController(GUIController):
             X = output,
             delimiter = '\t'
         )
+
+    def z_on_update(self, val):
+        z_slice = int(val)
+
+        if z_slice != self.slice:
+            self.slice = z_slice
+            self.draw_fish()
 
     def flip_yz(self):
         self.images.reverse()
@@ -223,9 +329,9 @@ class VastInterfaceController(GUIController):
         recent_views.sort()
 
         # middle slice index
-        slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
+        # slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
 
-        return recent_chans, recent_views, slice
+        return recent_chans, recent_views
 
     def load_vexp(self):
         vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
@@ -254,6 +360,14 @@ class VastInterfaceController(GUIController):
         if self.z_focus_pos:
             self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
 
+    def load_stack(self, dir, chan=""):
+        im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
+        im_list.sort()
+
+        slices = np.array([tifffile.imread(f) for f in im_list])
+
+        return np.flip(slices, axis=1)
+
     def load_image(self, dir, chan="", slice=3):
         im_path = os.path.join(
             dir,
@@ -271,8 +385,14 @@ class VastInterfaceController(GUIController):
 
         # initialize plot
         chan = self.channel_names[self.curr_channel]
+        
+        if self.project.get():
+            image_to_display = self.projections['edof'][self.perspective][chan]
+        else:
+            image_to_display = self.images[self.perspective][chan][self.slice]
+
         ax.imshow(
-            adjust_gamma(self.images[self.perspective][chan], self.gammas[self.curr_channel]),
+            adjust_gamma(image_to_display, self.gammas[self.curr_channel]),
             cmap='gray'
         )
 
@@ -404,14 +524,36 @@ class VastInterfaceController(GUIController):
             self.nose_position = new_position
 
     def key_press(self, event):
+        # if event.key == 'down':
+        #     self.slice = np.min([self.n_slices - 1, self.slice + 1])
+        #     self.z_scrollbar.set(self.slice)
+        #     self.draw_fish()
+        # elif event.key == 'up':
+        #     self.slice = np.max([0, self.slice - 1])
+        #     self.z_scrollbar.set(self.slice)
+        #     self.draw_fish()
+        
+        try:
+            key_num = int(event.key)
+        except ValueError:
+            return
+
         for c, _ in enumerate(self.channel_names):
-            if int(event.key) == (c+1):
+            if key_num == (c+1):
                 self.curr_channel = c
                 self.draw_fish()
 
     def mouse_wheel(self, event):
-        self.gammas[self.curr_channel] += event.step * 0.02
-        self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
+        # self.gammas[self.curr_channel] += event.step * 0.02
+        # self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
+        
+        self.slice = np.clip(
+            self.slice - int(np.clip(event.step, a_min=-1, a_max=1)), 
+            a_min=0, 
+            a_max=self.n_slices-1
+            )
+        
+        self.z_scrollbar.set(self.slice)
         self.draw_fish()
 
     def on_click(self, event):
