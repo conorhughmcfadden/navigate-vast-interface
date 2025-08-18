@@ -240,8 +240,6 @@ class VastInterfaceController(GUIController):
         ax = self.fish_widget.ax
         ax.clear()
 
-        print(self.current_position)
-
         # index the image to display
         c_idx = self.channel_names[self.curr_channel_idx]
         v_idx = int(self.current_position['theta'])
@@ -251,12 +249,38 @@ class VastInterfaceController(GUIController):
 
         ax.imshow(image_to_display, cmap='gray')
 
+        # SET UP AXES:
+        # scale axes to VAST
+        res = 0.5
+        ticks = ax.get_xticks()*VAST_UM_PIX/1000
+        n_ticks = int(ticks.max()/res)
+        tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
+        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ax.set_xticks(ticks)
+        _ = ax.set_xticklabels(tick_labels)
+
+        res = 0.25
+        ticks = ax.get_yticks()*VAST_UM_PIX/1000
+        n_ticks = int(ticks.max()/res)
+        tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
+        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ax.set_yticks(ticks)
+        _ = ax.set_yticklabels(tick_labels)
+
+        # label axes
+        ax.set_xlabel("X [mm]")
+        ax.set_ylabel("Z [mm]")
+
+        # fix xy limits
+        ax.set_xlim(0, self.w)
+        ax.set_ylim(0, self.l)
+
         # FINISH: set up canvas
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
             ax.bbox
         )
-        
+
     @staticmethod
     def load_stack(dir, chan):
         """
