@@ -99,7 +99,86 @@ def extended_depth_of_field(stack : dict, ksize=5, bsize=11, order=2, ref_chan="
 
     return output
 
+class vector(dict):
+    """
+        Helper dict-like class to do vector operations with labelled axes.
+    """
+    def __init__(self, d):
+        super().__init__(d)
+    
+    def __sub__(self, other):
+        if isinstance(other, (int, float)):
+            return {k: self[k] - other for k in self}
+        else:
+            try:
+                return {k: self[k] - other[k] for k in self}
+            except (TypeError, KeyError):
+                print("Must '-' with numeric scalar or dict with matching keys.")
+    
+    def __add__(self, other):
+        if isinstance(other, (int, float)):
+            return {k: self[k] + other for k in self}
+        else:
+            try:
+                return {k: self[k] + other[k] for k in self}
+            except (TypeError, KeyError):
+                print("Must '+' with numeric scalar or dict with matching keys.")
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return {k: self[k] * other for k in self}
+        else:
+            try:
+                return {k: self[k] * other[k] for k in self}
+            except (TypeError, KeyError):
+                print("Must '*', with numeric scalar or dict with matching keys.")
+
+    def __rmul__(self, other):
+        self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, (int, float)):
+            return self.__mul__(1 / other)
+        else:
+            print("Division only works with scalars...")    
+
 class VastInterfaceController(GUIController):
+
+    def __init__(self, view, parent_controller : Controller = None):
+        super().__init__(view, parent_controller)
+
+        # get plugin name to call events from parent_controller
+        config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
+        plugin_config = load_yaml_file(config_path)
+        self.plugin_name = plugin_config['name']
+
+        self.initialize()
+
+        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
+
+    def initialize(self):
+        self.variables = self.view.get_variables()
+        self.widgets = self.view.get_widgets()
+        self.buttons = self.view.buttons
+
+        self.fish_widget = self.widgets['fish_widget']
+        self.z_scrollbar = self.widgets['z_scrollbar']
+        self.text_var = self.variables['text']
+        self.vexp_path_var = self.variables['path']
+        self.path_button = self.buttons['path']
+        # self.set_focus_button = self.buttons['set_focus']
+        self.done_button = self.buttons['done']
+        self.clear_button = self.buttons['clear']
+        self.save_pos_button = self.buttons['save_pos']
+        # self.flip_yz_button = self.buttons['flip_yz']        
+
+        # variables
+        self.stage_axes = self.parent_controller.configuration_controller.stage_axes
+        self.current_position = {ax: 0. for ax in self.stage_axes}
+
+        
+
+class Dummy(GUIController):
 
     def __init__(self, view, parent_controller : Controller = None):
         super().__init__(view, parent_controller)
