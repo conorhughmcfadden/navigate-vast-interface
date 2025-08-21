@@ -221,17 +221,42 @@ class VastInterfaceController(GUIController):
         self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
 
         # set scrollbar ranges
-        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.set_y)
-        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=self.set_theta)
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: self.set_axis(int(val), 'y'))
+        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: self.set_axis(int(val), 'theta'))
+
+        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
+        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
 
         self.draw_fish()
 
-    def set_y(self, val):
-        self.current_position['y'] = int(val)
-        self.draw_fish()
+    def mousewheel_axis(self, event, axis):
 
-    def set_theta(self, val):
-        self.current_position['theta'] = int(val)
+        # get scrollbar range
+        scrollbar = event.widget
+        s_min = int(scrollbar.cget('from'))
+        s_max = int(scrollbar.cget('to'))
+
+        # get step
+        delta = np.clip(event.delta, a_min=-1, a_max=1)
+        
+        # invert scrolling
+        delta = -delta
+
+        # update pos within range
+        new_pos = np.clip(
+            self.current_position[axis] + delta,
+            a_min=s_min,
+            a_max=s_max
+        )
+        
+        # update the scrollbar
+        scrollbar.set(new_pos)
+
+        # update axis
+        self.set_axis(new_pos, axis)
+
+    def set_axis(self, value, axis):
+        self.current_position[axis] = value
         self.draw_fish()
 
     def draw_fish(self):
