@@ -224,6 +224,7 @@ class VastInterfaceController(GUIController):
         self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: self.set_axis(int(val), 'y'))
         self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: self.set_axis(int(val), 'theta'))
 
+        # mousewheel events
         self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
         self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
 
