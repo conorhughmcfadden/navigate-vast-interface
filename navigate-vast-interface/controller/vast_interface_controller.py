@@ -208,7 +208,7 @@ class VastInterfaceController(GUIController):
         # the working dir will be parent of views
         self.working_dir = Path(self.view_names[0]).parent.resolve()
 
-        # load images: [chan, view, slice, x, y]
+        # load images: [chan, view, slice]
         self.images = {}
         for chan in self.channel_names:
             self.images[chan] = []
