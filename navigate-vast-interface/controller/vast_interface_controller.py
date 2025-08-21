@@ -179,13 +179,7 @@ class VastInterfaceController(GUIController):
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.current_position = vector(self.stage_axes, val=0.)
         self.global_origin = vector(self.stage_axes, val=0.)
-
         self.annotated_positions = []
-
-        # crosshair positions on image
-        self.x_ = 0
-        self.z_ = 0
-
         self.working_dir = None
 
         # flip stuff
@@ -281,6 +275,15 @@ class VastInterfaceController(GUIController):
             self.fish_widget.ax.draw_artist(l)
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
         self.fish_widget.canvas.flush_events()        
+
+        # update text
+        self.update_text()
+
+    def update_text(self):
+
+        tstr = f"{self.current_position}"
+
+        self.text_var.set(tstr)
 
     def mousewheel_axis(self, event, axis):
 
