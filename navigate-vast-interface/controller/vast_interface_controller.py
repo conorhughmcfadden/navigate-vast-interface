@@ -289,7 +289,11 @@ class VastInterfaceController(GUIController):
             Output dim: [slice, row, col]
         """
         im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
-        im_list.sort()
+
+        # sort by filename
+        def get_idx(f):
+            return int(Path(f).stem.split('_')[-1])
+        im_list.sort(key=get_idx)
 
         slices = np.array([tifffile.imread(f) for f in im_list])
 
