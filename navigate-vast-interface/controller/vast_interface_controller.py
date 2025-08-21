@@ -166,6 +166,8 @@ class VastInterfaceController(GUIController):
         self.fish_widget = self.widgets['fish_widget']
         self.y_scrollbar = self.widgets['y_scrollbar']
         self.theta_scrollbar = self.widgets['theta_scrollbar']
+        self.chan_scrollbar = self.widgets['chan_scrollbar']
+        
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
@@ -189,6 +191,8 @@ class VastInterfaceController(GUIController):
         # flip stuff
 
         # projection stuff
+        self.do_projection = self.widgets['project']['variable']
+        self.do_projection_check = self.widgets['project']['button']
 
         # focus pos stuff?
 
@@ -201,9 +205,9 @@ class VastInterfaceController(GUIController):
 
         # get channel names and view folders
         (self.channel_names, self.view_names) = self.parse_most_recent_well()
-
-        self.curr_channel_idx = 0
         self.n_views = len(self.view_names)
+        self.n_channels = len(self.channel_names)
+        self.curr_channel_idx = 0
 
         # the working dir will be parent of views
         self.working_dir = Path(self.view_names[0]).parent.resolve()
@@ -213,20 +217,37 @@ class VastInterfaceController(GUIController):
         for chan in self.channel_names:
             self.images[chan] = []
             for view in self.view_names:
-                self.images[chan].append(
-                    self.load_stack(view, chan)
-                )
-        
+                stack = self.load_stack(view, chan)
+                self.images[chan].append(stack)
+
         # store stack dimensions
         self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
 
         # set scrollbar ranges
         self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: self.set_axis(int(val), 'y'))
         self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: self.set_axis(int(val), 'theta'))
+        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1, command=lambda val: self.set_axis(int(val), 'chan'))
 
         # mousewheel events
         self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
         self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
+        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'chan'))
+
+        # button click events
+        self.do_projection_check.configure(command=self.draw_fish)
+
+        # compute projections
+        self.projections = {chan: [] for chan in self.images}
+        for v in range(self.n_views):
+            new_projection = extended_depth_of_field(
+                {chan: self.images[chan][v] for chan in self.images},
+                ref_chan="",
+                ksize=5,
+                bsize=11,
+                dark_ref_bg=False
+            )
+            for chan in self.images:
+                self.projections[chan].append(new_projection[chan])
 
         self.draw_fish()
 
@@ -245,7 +266,7 @@ class VastInterfaceController(GUIController):
 
         # update pos within range
         new_pos = np.clip(
-            self.current_position[axis] + delta,
+            self.get_axis(axis) + delta,
             a_min=s_min,
             a_max=s_max
         )
@@ -257,8 +278,17 @@ class VastInterfaceController(GUIController):
         self.set_axis(new_pos, axis)
 
     def set_axis(self, value, axis):
-        self.current_position[axis] = value
+        if axis == 'chan':
+            self.curr_channel_idx = value
+        else:
+            self.current_position[axis] = value
         self.draw_fish()
+
+    def get_axis(self, axis):
+        if axis == 'chan':
+            return self.curr_channel_idx
+        else:
+            return self.current_position[axis]
 
     def draw_fish(self):
 
@@ -267,11 +297,14 @@ class VastInterfaceController(GUIController):
         ax.clear()
 
         # index the image to display
-        c_idx = self.channel_names[self.curr_channel_idx]
+        chan = self.channel_names[self.curr_channel_idx]
         v_idx = int(self.current_position['theta'])
         y_idx = int(self.current_position['y'])
 
-        image_to_display = self.images[c_idx][v_idx][y_idx]
+        if self.do_projection.get():
+            image_to_display = self.projections[chan][v_idx]
+        else:
+            image_to_display = self.images[chan][v_idx][y_idx]
 
         ax.imshow(image_to_display, cmap='gray')
 

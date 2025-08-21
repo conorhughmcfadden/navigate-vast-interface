@@ -17,7 +17,7 @@ class FishWidget:
 
     def __init__(self, master):
 
-        self.fig = Figure(figsize=(14,5))
+        self.fig = Figure(figsize=(12,4))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
@@ -66,25 +66,40 @@ class VastInterfaceFrame(ttk.Frame):
         self.fish_widget = FishWidget(self.fish_frame)
         self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
 
-        # Theta scrollbar
-        self.theta_scrollbar = tk.Scale(
-            self.fish_frame, 
-            orient=tk.VERTICAL,
-            tickinterval=1,
-            label="Theta"
-            )
-        self.theta_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
-        self.inputs['theta_scrollbar'] = self.theta_scrollbar
+        # Scrollbars
+        for scrollable in ["Y", "Theta", "Chan"]:
+            scrollbar = tk.Scale(
+                self.fish_frame, 
+                orient=tk.VERTICAL,
+                tickinterval=1,
+                label=scrollable
+                )
+            scrollbar.pack(
+                fill=tk.Y, 
+                side=tk.RIGHT, 
+                expand=tk.TRUE
+                )
+            self.inputs[f'{scrollable.lower()}_scrollbar'] = scrollbar
 
-        # Y scrollbar
-        self.y_scrollbar = tk.Scale(
-            self.fish_frame, 
-            orient=tk.VERTICAL,
-            tickinterval=1,
-            label="Y"
-            )
-        self.y_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
-        self.inputs['y_scrollbar'] = self.y_scrollbar
+        # # Theta scrollbar
+        # self.theta_scrollbar = tk.Scale(
+        #     self.fish_frame, 
+        #     orient=tk.VERTICAL,
+        #     tickinterval=1,
+        #     label="Theta"
+        #     )
+        # self.theta_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+        # self.inputs['theta_scrollbar'] = self.theta_scrollbar
+
+        # # Y scrollbar
+        # self.y_scrollbar = tk.Scale(
+        #     self.fish_frame, 
+        #     orient=tk.VERTICAL,
+        #     tickinterval=1,
+        #     label="Y"
+        #     )
+        # self.y_scrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.TRUE)
+        # self.inputs['y_scrollbar'] = self.y_scrollbar
 
         self.inputs['fish_widget'] = self.fish_widget
 
