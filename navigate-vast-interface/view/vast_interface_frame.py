@@ -20,6 +20,7 @@ class FishWidget:
         self.fig = Figure(figsize=(12,4))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
+        self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
 
 class VastInterfaceFrame(ttk.Frame):
@@ -52,10 +53,7 @@ class VastInterfaceFrame(ttk.Frame):
         self.buttons = {}
         self.variables = {}
 
-        # #################################
-        # ######## Example Widgets ########
-        # ##### add your widgets here #####
-        # #################################
+        # Text box
         self.variables['text'] = tk.StringVar()
         self.text_label = ttk.Label(self, textvariable=self.variables['text'])
         self.text_label.pack()
