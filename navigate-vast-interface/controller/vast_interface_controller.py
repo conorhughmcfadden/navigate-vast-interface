@@ -228,6 +228,10 @@ class VastInterfaceController(GUIController):
         self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: self.set_axis(int(val), 'theta'))
         self.chan_scrollbar.configure(from_=0, to=self.n_channels-1, command=lambda val: self.set_axis(int(val), 'chan'))
 
+        # store step sizes from expt
+        self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
+        self.theta_stack_step = self.vexp['AutoStSetup']['_degrees']
+
         # mousewheel events
         self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
         self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
@@ -250,6 +254,33 @@ class VastInterfaceController(GUIController):
                 self.projections[chan].append(new_projection[chan])
 
         self.draw_fish()
+
+        # widget events
+        self.fish_widget.fig.canvas.mpl_connect(
+            'motion_notify_event',
+            self.move_crosshair
+        )
+
+    def move_crosshair(self, event):
+        
+        # get position
+        x_ = event.xdata
+        z_ = event.ydata
+
+        # update current_position
+        self.current_position['x'] = x_
+        self.current_position['z'] = z_
+        
+        # create lines
+        self.fish_widget.lines[0].set_data([x_]*2, [0, self.l])
+        self.fish_widget.lines[1].set_data([0, self.w], [z_]*2)        
+
+        # blit onto frame
+        self.fish_widget.canvas.restore_region(self.background)
+        for l in self.fish_widget.lines:
+            self.fish_widget.ax.draw_artist(l)
+        self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
+        self.fish_widget.canvas.flush_events()        
 
     def mousewheel_axis(self, event, axis):
 
