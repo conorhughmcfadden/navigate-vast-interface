@@ -374,6 +374,44 @@ class VastInterfaceController(GUIController):
             ax.bbox
         )
 
+    def find_nose_position(self, chan="", view=0, window=5):
+
+        im = 255 - self.projections[chan][view]
+
+        # if self.cap_image:
+        #     im = im / (255 - self.cap_image + 1)
+
+        # probability density
+        p = im.sum(axis=0)
+        p = p / p.sum()
+        x = np.arange(0, len(p))
+
+        # skewness to determine direction
+        x_mean = np.sum(x * p)
+        x_med  = np.where(np.cumsum(p) >= 0.5)[0][0]
+
+        sign = 2*int(x_med > x_mean) - 1
+
+        # nose detector
+        tracker = 0
+        trace = []
+
+        for i in range(x[-1] - window):
+            s = p[::sign][i:(i+window)]
+            idx = s.argmin()
+
+            if idx == window-1:
+                tracker += 1
+            else:
+                tracker = 0
+        
+            trace.append(tracker)
+
+        trace = trace[::sign]
+
+        # return the nose position along x: pixels
+        return np.argmax(trace)
+
     @staticmethod
     def load_stack(dir, chan):
         """
