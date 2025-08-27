@@ -249,6 +249,9 @@ class VastInterfaceController(GUIController):
 
         self.draw_fish()
 
+        nose_pos = self.find_nose_position()
+        print("Nose pos:", nose_pos)
+
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
             'motion_notify_event',
@@ -376,7 +379,20 @@ class VastInterfaceController(GUIController):
 
     def find_nose_position(self, chan="", view=0, window=5):
 
-        im = 255 - self.projections[chan][view]
+        ax = self.fish_widget.ax
+
+        im = self.projections[chan][view]
+        # im = self.images[chan][view][3]
+        
+        # scale to prevent buffer overflow
+        im = 1. - (im / 65535) # uint16
+
+        print(
+            "Image details",
+            [im.min(), im.max(), im.shape, im.dtype]
+            )
+
+        ax.imshow(im, cmap='gray')
 
         # if self.cap_image:
         #     im = im / (255 - self.cap_image + 1)
@@ -386,11 +402,20 @@ class VastInterfaceController(GUIController):
         p = p / p.sum()
         x = np.arange(0, len(p))
 
+        print(p, f"Sum: {p.sum()}")
+        print(x)
+
         # skewness to determine direction
         x_mean = np.sum(x * p)
         x_med  = np.where(np.cumsum(p) >= 0.5)[0][0]
 
+        ax.plot(x, 100 * (p / p.max()))
+
         sign = 2*int(x_med > x_mean) - 1
+
+        print("mean:", x_mean)
+        print("med:", x_med)
+        print("Sign:", sign)
 
         # nose detector
         tracker = 0
@@ -409,8 +434,14 @@ class VastInterfaceController(GUIController):
 
         trace = trace[::sign]
 
+        ax.plot(trace)
+
+        nose_pos = np.argmax(trace)
+
+        ax.vlines(nose_pos, ymin=0, ymax=len(im), linestyles='--', color='g')        
+
         # return the nose position along x: pixels
-        return np.argmax(trace)
+        return nose_pos
 
     @staticmethod
     def load_stack(dir, chan):
