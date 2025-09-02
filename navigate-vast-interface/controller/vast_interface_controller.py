@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 from glob import glob
 import numpy as np
+from scipy import stats
 from tkinter import filedialog
 from copy import deepcopy
 
@@ -97,7 +98,7 @@ def extended_depth_of_field(stack : dict, ksize=5, bsize=11, order=2, ref_chan="
     # convert back to np.uint16
     output = {chan: np.uint16(output[chan]) for chan in output}
 
-    return output
+    return output, inds
 
 class vector(dict):
     """
@@ -234,24 +235,39 @@ class VastInterfaceController(GUIController):
         # button click events
         self.do_projection_check.configure(command=self.draw_fish)
 
-        # compute projections
+        # need to pick a view to calculate nose_pos, in_focus
+        reference_view = 0
+
+        # compute projections and find in_focus_slice
         self.projections = {chan: [] for chan in self.images}
+        in_focus_slice = 0
         for v in range(self.n_views):
-            new_projection = extended_depth_of_field(
+            new_projection, indices = extended_depth_of_field(
                 {chan: self.images[chan][v] for chan in self.images},
                 ref_chan="",
                 ksize=5,
                 bsize=11,
                 dark_ref_bg=False
             )
+            if v == reference_view:
+                in_focus_slice = stats.mode(indices.flatten()).mode[0]
             for chan in self.images:
                 self.projections[chan].append(new_projection[chan])
 
-        self.draw_fish()
+        # set y-origin to in_focus_slice
+        self.global_origin['y'] = in_focus_slice
+        self.y_scrollbar.set(in_focus_slice)
+        print("In focus slice:", in_focus_slice)
 
+        # automatically calculate nose position
         nose_pos = self.find_nose_position()
         print("Nose pos:", nose_pos)
 
+        # set x-origin to nose_pos
+        self.global_origin['x'] = nose_pos
+
+        self.draw_fish()
+       
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
             'motion_notify_event',
@@ -363,6 +379,10 @@ class VastInterfaceController(GUIController):
         ax.set_yticks(ticks)
         _ = ax.set_yticklabels(tick_labels)
 
+        # draw nose position
+        nose_pos = self.global_origin['x']
+        ax.vlines(nose_pos, ymin=0, ymax=self.l, linestyles='--', color='b')
+
         # label axes
         ax.set_xlabel("X [mm]")
         ax.set_ylabel("Z [mm]")
@@ -438,7 +458,7 @@ class VastInterfaceController(GUIController):
 
         nose_pos = np.argmax(trace)
 
-        ax.vlines(nose_pos, ymin=0, ymax=len(im), linestyles='--', color='g')        
+        # ax.vlines(nose_pos, ymin=0, ymax=len(im), linestyles='--', color='g')        
 
         # return the nose position along x: pixels
         return nose_pos
