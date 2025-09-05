@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2
 from glob import glob
 import numpy as np
-from scipy import stats
+from scipy import stats, signal
 from tkinter import filedialog
 from copy import deepcopy
 
@@ -116,7 +116,7 @@ class vector(dict):
             try:
                 return {k: self[k] - other[k] for k in self}
             except (TypeError, KeyError):
-                print("Must '-' with numeric scalar or dict with matching keys.")
+                print(f"Must '-' with numeric scalar or dict with matching keys. Instead got {self} - {other}.")
     
     def __add__(self, other):
         if isinstance(other, (int, float)):
@@ -125,7 +125,7 @@ class vector(dict):
             try:
                 return {k: self[k] + other[k] for k in self}
             except (TypeError, KeyError):
-                print("Must '+' with numeric scalar or dict with matching keys.")
+                print(f"Must '+' with numeric scalar or dict with matching keys. Instead got {self} + {other}.")
 
     def __mul__(self, other):
         if isinstance(other, (int, float)):
@@ -134,7 +134,7 @@ class vector(dict):
             try:
                 return {k: self[k] * other[k] for k in self}
             except (TypeError, KeyError):
-                print("Must '*', with numeric scalar or dict with matching keys.")
+                print(f"Must '*', with numeric scalar or dict with matching keys. Instead got {self} * {other}.")
 
     def __rmul__(self, other):
         self.__mul__(other)
@@ -189,8 +189,6 @@ class VastInterfaceController(GUIController):
         self.do_projection = self.widgets['project']['variable']
         self.do_projection_check = self.widgets['project']['button']
 
-        # focus pos stuff?
-
         # append nose...
 
         # get the vexp
@@ -219,13 +217,26 @@ class VastInterfaceController(GUIController):
         self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
 
         # set scrollbar ranges
-        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: self.set_axis(int(val), 'y'))
-        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: self.set_axis(int(val), 'theta'))
-        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1, command=lambda val: self.set_axis(int(val), 'chan'))
+        def set_axis_and_draw(val, ax):
+            self.set_axis(int(val), ax)
+            self.draw_fish()
+
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: set_axis_and_draw(val, 'y'))
+        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: set_axis_and_draw(val, 'theta'))
+        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1, command=lambda val: set_axis_and_draw(val, 'chan'))
 
         # store step sizes from expt
-        self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
-        self.theta_stack_step = self.vexp['AutoStSetup']['_degrees']
+        self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
+        self.theta_step = float(self.vexp['AutoStSetup']['_degrees']['text'])
+
+        # build vector to keep track of units
+        self.units = vector(self.stage_axes)
+        self.units[AXIS_MAPPING[0]] = VAST_UM_PIX       # x (um)
+        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
+        self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
+        self.units['theta'] = self.theta_step           # theta (degrees)
+
+        print(f"Units = {self.units}")
 
         # mousewheel events
         self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
@@ -254,25 +265,47 @@ class VastInterfaceController(GUIController):
             for chan in self.images:
                 self.projections[chan].append(new_projection[chan])
 
-        # set y-origin to in_focus_slice
-        self.global_origin['y'] = in_focus_slice
-        self.y_scrollbar.set(in_focus_slice)
-        print("In focus slice:", in_focus_slice)
-
         # automatically calculate nose position
         nose_pos = self.find_nose_position()
         print("Nose pos:", nose_pos)
 
         # set x-origin to nose_pos
-        self.global_origin['x'] = nose_pos
+        self.global_origin[AXIS_MAPPING[0]] = nose_pos
 
-        self.draw_fish()
-       
+        # set z-origin to top of capillary
+        cap_peaks = self.find_capillary_boundary(view=reference_view)
+        self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
+
+        # set y-origin to in_focus_slice
+        self.global_origin[AXIS_MAPPING[1]] = in_focus_slice
+        self.y_scrollbar.set(in_focus_slice)
+        self.set_axis(in_focus_slice, axis=AXIS_MAPPING[1])
+        print("In focus slice:", in_focus_slice)
+
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
             'motion_notify_event',
             self.move_crosshair
         )
+
+        # first draw
+        self.draw_fish()
+
+    def find_capillary_boundary(self, chan="", view=0):
+        im = self.projections[chan][view]
+
+        profile = im.sum(axis=1)
+
+        # normalize and invert
+        profile -= profile.min()
+        profile = 1 - profile/profile.max()
+
+        # find top two peaks
+        peaks = signal.find_peaks(profile)[0]
+        inds = np.argsort([profile[p] for p in peaks])[::-1][:2]
+        peaks = peaks[inds]
+
+        return peaks
 
     def move_crosshair(self, event):
         
@@ -281,8 +314,8 @@ class VastInterfaceController(GUIController):
         z_ = event.ydata
 
         # update current_position
-        self.current_position['x'] = x_
-        self.current_position['z'] = z_
+        self.set_axis(x_, AXIS_MAPPING[0])
+        self.set_axis(z_, AXIS_MAPPING[2])
         
         # create lines
         self.fish_widget.lines[0].set_data([x_]*2, [0, self.l])
@@ -300,7 +333,8 @@ class VastInterfaceController(GUIController):
 
     def update_text(self):
 
-        tstr = f"{self.current_position}"
+        relative_position = self.current_position - self.global_origin
+        tstr = f"{relative_position}"
 
         self.text_var.set(tstr)
 
@@ -331,11 +365,15 @@ class VastInterfaceController(GUIController):
         self.set_axis(new_pos, axis)
 
     def set_axis(self, value, axis):
+        if value is None:
+            return
+        
         if axis == 'chan':
             self.curr_channel_idx = value
         else:
             self.current_position[axis] = value
-        self.draw_fish()
+        
+        # self.draw_fish()
 
     def get_axis(self, axis):
         if axis == 'chan':
@@ -352,7 +390,7 @@ class VastInterfaceController(GUIController):
         # index the image to display
         chan = self.channel_names[self.curr_channel_idx]
         v_idx = int(self.current_position['theta'])
-        y_idx = int(self.current_position['y'])
+        y_idx = int(self.current_position[AXIS_MAPPING[1]])
 
         if self.do_projection.get():
             image_to_display = self.projections[chan][v_idx]
@@ -380,12 +418,16 @@ class VastInterfaceController(GUIController):
         _ = ax.set_yticklabels(tick_labels)
 
         # draw nose position
-        nose_pos = self.global_origin['x']
+        nose_pos = self.global_origin[AXIS_MAPPING[0]]
         ax.vlines(nose_pos, ymin=0, ymax=self.l, linestyles='--', color='b')
 
+        # draw capillary top
+        cap_top = self.global_origin[AXIS_MAPPING[2]]
+        ax.hlines(cap_top, xmin=0, xmax=self.w, linestyles='--', color='b')
+
         # label axes
-        ax.set_xlabel("X [mm]")
-        ax.set_ylabel("Z [mm]")
+        ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
+        ax.set_ylabel(f"{AXIS_MAPPING[2].upper()} [mm]")
 
         # fix xy limits
         ax.set_xlim(0, self.w)
@@ -396,6 +438,8 @@ class VastInterfaceController(GUIController):
         self.background = self.fish_widget.canvas.copy_from_bbox(
             ax.bbox
         )
+
+        self.update_text()
 
     def find_nose_position(self, chan="", view=0, window=5):
 
