@@ -11,6 +11,7 @@ from copy import deepcopy
 # Third party imports
 from tifffile import tifffile
 from skimage.exposure import adjust_gamma
+from matplotlib.patches import Circle
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
@@ -329,8 +330,8 @@ class VastInterfaceController(GUIController):
 
     def update_text(self):
 
-        relative_position = (self.current_position - self.global_origin) * self.units
-        tstr = f"{relative_position}"
+        relative_position_um = self.get_relative_position() * self.units
+        tstr = f"{relative_position_um}"
 
         self.text_var.set(tstr)
 
@@ -377,6 +378,9 @@ class VastInterfaceController(GUIController):
         else:
             return self.current_position[axis]
 
+    def get_relative_position(self):
+        return self.current_position - self.global_origin
+
     def draw_fish(self):
 
         # clear the plot
@@ -413,13 +417,31 @@ class VastInterfaceController(GUIController):
         ax.set_yticks(ticks)
         _ = ax.set_yticklabels(tick_labels)
 
-        # draw nose position
+        # ORIGIN X: draw nose position
         nose_pos = self.global_origin[AXIS_MAPPING[0]]
         ax.vlines(nose_pos, ymin=0, ymax=self.l, linestyles='--', color='b')
 
-        # draw capillary top
+        # ORIGIN M: draw capillary top
         cap_top = self.global_origin[AXIS_MAPPING[2]]
         ax.hlines(cap_top, xmin=0, xmax=self.w, linestyles='--', color='b')
+
+        # ORIGIN Y: draw circle to signify y-pos
+        scale = 25
+        defocus = (2*scale/self.n_slices) * self.get_relative_position()[AXIS_MAPPING[1]]
+        ax.add_patch(
+            Circle(
+                xy=(nose_pos - defocus, cap_top - defocus), 
+                radius=abs(defocus) + 5,
+                color='b',
+                fill=(defocus == 0)
+            )
+        )
+        ax.plot(
+            [nose_pos-scale, nose_pos+scale],
+            [cap_top-scale, cap_top+scale],
+            color='b',
+            ls='--'
+        )
 
         # label axes
         ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
