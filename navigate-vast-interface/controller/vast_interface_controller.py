@@ -111,28 +111,28 @@ class vector(dict):
     
     def __sub__(self, other):
         if isinstance(other, (int, float)):
-            return {k: self[k] - other for k in self}
+            return vector({k: self[k] - other for k in self})
         else:
             try:
-                return {k: self[k] - other[k] for k in self}
+                return vector({k: self[k] - other[k] for k in self})
             except (TypeError, KeyError):
                 print(f"Must '-' with numeric scalar or dict with matching keys. Instead got {self} - {other}.")
     
     def __add__(self, other):
         if isinstance(other, (int, float)):
-            return {k: self[k] + other for k in self}
+            return vector({k: self[k] + other for k in self})
         else:
             try:
-                return {k: self[k] + other[k] for k in self}
+                return vector({k: self[k] + other[k] for k in self})
             except (TypeError, KeyError):
                 print(f"Must '+' with numeric scalar or dict with matching keys. Instead got {self} + {other}.")
 
     def __mul__(self, other):
         if isinstance(other, (int, float)):
-            return {k: self[k] * other for k in self}
+            return vector({k: self[k] * other for k in self})
         else:
             try:
-                return {k: self[k] * other[k] for k in self}
+                return vector({k: self[k] * other[k] for k in self})
             except (TypeError, KeyError):
                 print(f"Must '*', with numeric scalar or dict with matching keys. Instead got {self} * {other}.")
 
@@ -236,8 +236,6 @@ class VastInterfaceController(GUIController):
         self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
         self.units['theta'] = self.theta_step           # theta (degrees)
 
-        print(f"Units = {self.units}")
-
         # mousewheel events
         self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
         self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
@@ -267,7 +265,6 @@ class VastInterfaceController(GUIController):
 
         # automatically calculate nose position
         nose_pos = self.find_nose_position()
-        print("Nose pos:", nose_pos)
 
         # set x-origin to nose_pos
         self.global_origin[AXIS_MAPPING[0]] = nose_pos
@@ -280,7 +277,6 @@ class VastInterfaceController(GUIController):
         self.global_origin[AXIS_MAPPING[1]] = in_focus_slice
         self.y_scrollbar.set(in_focus_slice)
         self.set_axis(in_focus_slice, axis=AXIS_MAPPING[1])
-        print("In focus slice:", in_focus_slice)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -333,7 +329,7 @@ class VastInterfaceController(GUIController):
 
     def update_text(self):
 
-        relative_position = self.current_position - self.global_origin
+        relative_position = (self.current_position - self.global_origin) * self.units
         tstr = f"{relative_position}"
 
         self.text_var.set(tstr)
@@ -451,11 +447,6 @@ class VastInterfaceController(GUIController):
         # scale to prevent buffer overflow
         im = 1. - (im / 65535) # uint16
 
-        print(
-            "Image details",
-            [im.min(), im.max(), im.shape, im.dtype]
-            )
-
         ax.imshow(im, cmap='gray')
 
         # if self.cap_image:
@@ -466,9 +457,6 @@ class VastInterfaceController(GUIController):
         p = p / p.sum()
         x = np.arange(0, len(p))
 
-        print(p, f"Sum: {p.sum()}")
-        print(x)
-
         # skewness to determine direction
         x_mean = np.sum(x * p)
         x_med  = np.where(np.cumsum(p) >= 0.5)[0][0]
@@ -476,10 +464,6 @@ class VastInterfaceController(GUIController):
         ax.plot(x, 100 * (p / p.max()))
 
         sign = 2*int(x_med > x_mean) - 1
-
-        print("mean:", x_mean)
-        print("med:", x_med)
-        print("Sign:", sign)
 
         # nose detector
         tracker = 0
