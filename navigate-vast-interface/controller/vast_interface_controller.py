@@ -238,9 +238,9 @@ class VastInterfaceController(GUIController):
         self.units['theta'] = self.theta_step           # theta (degrees)
 
         # mousewheel events
-        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'y'))
-        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'theta'))
-        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event, 'chan'))
+        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'y'))
+        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'theta'))
+        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'chan'))
 
         # button click events
         self.do_projection_check.configure(command=self.draw_fish)
@@ -289,6 +289,11 @@ class VastInterfaceController(GUIController):
             'button_press_event',
             self.on_click
         )
+        
+        self.fish_widget.fig.canvas.mpl_connect(
+            'scroll_event',
+            lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
+        )
 
         # first draw
         self.draw_fish()
@@ -336,15 +341,12 @@ class VastInterfaceController(GUIController):
     @staticmethod
     def format_vectors_to_table(vector_list : list[vector]):
 
-        head = list(vector_list[0].keys())
-
+        head = [ax.upper() for ax in vector_list[0]]
         body = [list(v.values()) for v in vector_list]
 
-        return [ax.upper() for ax in head] + body
+        return [head] + body
 
     def on_click(self, event):
-
-        print(event.button)
 
         if event.button == 1:
             # in pixels...
@@ -352,14 +354,23 @@ class VastInterfaceController(GUIController):
             self.annotated_positions += [new_position]
         elif event.button == 3:
             # remove last
-            removed = self.annotated_positions.pop(-1)
-            print("Removed: ", removed)
+            try:
+                self.annotated_positions.pop(-1)
+            except IndexError:
+                pass
 
-        self.update_multiposition_controller(
-            self.format_vectors_to_table(
-                [v * self.units for v in self.annotated_positions]
+        self.update_positions()
+        self.draw_fish()
+
+    def update_positions(self):
+        if self.annotated_positions:
+            self.update_multiposition_controller(
+                self.format_vectors_to_table(
+                    [v * self.units for v in self.annotated_positions]
+                )
             )
-        )
+        else:
+            self.update_multiposition_controller([])
 
     def update_multiposition_controller(self, multi_positions):
         self.parent_controller.model.configuration["multi_positions"] = multi_positions
@@ -372,15 +383,14 @@ class VastInterfaceController(GUIController):
 
         self.text_var.set(tstr)
 
-    def mousewheel_axis(self, event, axis):
+    def mousewheel_axis(self, scrollbar, delta, axis):
 
         # get scrollbar range
-        scrollbar = event.widget
         s_min = int(scrollbar.cget('from'))
         s_max = int(scrollbar.cget('to'))
 
-        # get step
-        delta = np.clip(event.delta, a_min=-1, a_max=1)
+        # clip step
+        delta = np.clip(delta, a_min=-1, a_max=1)
         
         # invert scrolling
         delta = -delta
@@ -479,6 +489,20 @@ class VastInterfaceController(GUIController):
             color='b',
             ls='--'
         )
+
+        # draw annotations
+        for i, pos in enumerate(self.annotated_positions):
+            curr = self.get_relative_position()
+            if pos['theta'] != curr['theta']:
+                continue
+
+            abs_pos = self.global_origin + pos
+            x = abs_pos['x']
+            y = abs_pos['m']
+            
+            color = [0, 1, 0] if pos['y'] == curr['y'] else [0.7, 0.1, 0.1]
+            weight = 'bold' if pos['y'] == curr['y'] else 'normal'
+            ax.text(x, y, i, color=color, fontdict={'weight': weight})
 
         # label axes
         ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
