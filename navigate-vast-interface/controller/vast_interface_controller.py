@@ -285,6 +285,11 @@ class VastInterfaceController(GUIController):
             self.move_crosshair
         )
 
+        self.fish_widget.fig.canvas.mpl_connect(
+            'button_press_event',
+            self.on_click
+        )
+
         # first draw
         self.draw_fish()
 
@@ -327,6 +332,38 @@ class VastInterfaceController(GUIController):
 
         # update text
         self.update_text()
+
+    @staticmethod
+    def format_vectors_to_table(vector_list : list[vector]):
+
+        head = list(vector_list[0].keys())
+
+        body = [list(v.values()) for v in vector_list]
+
+        return [ax.upper() for ax in head] + body
+
+    def on_click(self, event):
+
+        print(event.button)
+
+        if event.button == 1:
+            # in pixels...
+            new_position = self.get_relative_position()
+            self.annotated_positions += [new_position]
+        elif event.button == 3:
+            # remove last
+            removed = self.annotated_positions.pop(-1)
+            print("Removed: ", removed)
+
+        self.update_multiposition_controller(
+            self.format_vectors_to_table(
+                [v * self.units for v in self.annotated_positions]
+            )
+        )
+
+    def update_multiposition_controller(self, multi_positions):
+        self.parent_controller.model.configuration["multi_positions"] = multi_positions
+        self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
 
     def update_text(self):
 
