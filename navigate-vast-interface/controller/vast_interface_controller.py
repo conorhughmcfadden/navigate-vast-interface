@@ -174,7 +174,7 @@ class VastInterfaceController(GUIController):
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
         self.done_button = self.buttons['done']
-        self.clear_button = self.buttons['clear']
+        self.reload_button = self.buttons['reload']
         self.save_pos_button = self.buttons['save_pos']
         
         # variables
@@ -184,18 +184,64 @@ class VastInterfaceController(GUIController):
         self.annotated_positions = []
         self.working_dir = None
 
-        # flip stuff
-
         # projection stuff
         self.do_projection = self.widgets['project']['variable']
         self.do_projection_check = self.widgets['project']['button']
 
-        # append nose...
+        def set_axis_and_draw(val, ax):
+            self.set_axis(int(val), ax)
+            self.draw_fish()
+        
+        # configure scrollbar commands
+        self.y_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'y'))
+        self.theta_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'theta'))
+        self.chan_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'chan'))
+
+        # mousewheel events
+        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'y'))
+        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'theta'))
+        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'chan'))
+
+        # button click events
+        self.reload_button.configure(command=self.load_next_fish)
+        self.do_projection_check.configure(command=self.draw_fish)
+
+        # widget events
+        self.fish_widget.fig.canvas.mpl_connect(
+            'motion_notify_event',
+            self.move_crosshair
+        )
+
+        self.fish_widget.fig.canvas.mpl_connect(
+            'button_press_event',
+            self.on_click
+        )
+        
+        self.fish_widget.fig.canvas.mpl_connect(
+            'scroll_event',
+            lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
+        )
+
+        # go ahead and load the first fish
+        self.load_next_fish()
+
+    def load_next_fish(self):
 
         # get the vexp
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
         self.vexp_path_var.set(self.vexp_path)
-        self.vexp = self.parse_vexp()        
+        self.vexp = self.parse_vexp()    
+
+        # store step sizes from expt
+        self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
+        self.theta_step = float(self.vexp['AutoStSetup']['_degrees']['text'])
+
+        # build vector to keep track of units
+        self.units = vector(self.stage_axes)
+        self.units[AXIS_MAPPING[0]] = VAST_UM_PIX       # x (um)
+        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
+        self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
+        self.units['theta'] = self.theta_step           # theta (degrees)
 
         # get channel names and view folders
         (self.channel_names, self.view_names) = self.parse_most_recent_well()
@@ -218,32 +264,9 @@ class VastInterfaceController(GUIController):
         self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
 
         # set scrollbar ranges
-        def set_axis_and_draw(val, ax):
-            self.set_axis(int(val), ax)
-            self.draw_fish()
-
-        self.y_scrollbar.configure(from_=0, to=self.n_slices-1, command=lambda val: set_axis_and_draw(val, 'y'))
-        self.theta_scrollbar.configure(from_=0, to=self.n_views-1, command=lambda val: set_axis_and_draw(val, 'theta'))
-        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1, command=lambda val: set_axis_and_draw(val, 'chan'))
-
-        # store step sizes from expt
-        self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
-        self.theta_step = float(self.vexp['AutoStSetup']['_degrees']['text'])
-
-        # build vector to keep track of units
-        self.units = vector(self.stage_axes)
-        self.units[AXIS_MAPPING[0]] = VAST_UM_PIX       # x (um)
-        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
-        self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
-        self.units['theta'] = self.theta_step           # theta (degrees)
-
-        # mousewheel events
-        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'y'))
-        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'theta'))
-        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'chan'))
-
-        # button click events
-        self.do_projection_check.configure(command=self.draw_fish)
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1)
+        self.theta_scrollbar.configure(from_=0, to=self.n_views-1)
+        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1)
 
         # need to pick a view to calculate nose_pos, in_focus
         reference_view = 0
@@ -279,22 +302,6 @@ class VastInterfaceController(GUIController):
         self.y_scrollbar.set(in_focus_slice)
         self.set_axis(in_focus_slice, axis=AXIS_MAPPING[1])
 
-        # widget events
-        self.fish_widget.fig.canvas.mpl_connect(
-            'motion_notify_event',
-            self.move_crosshair
-        )
-
-        self.fish_widget.fig.canvas.mpl_connect(
-            'button_press_event',
-            self.on_click
-        )
-        
-        self.fish_widget.fig.canvas.mpl_connect(
-            'scroll_event',
-            lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
-        )
-
         # first draw
         self.draw_fish()
 
@@ -315,7 +322,6 @@ class VastInterfaceController(GUIController):
         return peaks
 
     def move_crosshair(self, event):
-        
         # get position
         x_ = event.xdata
         z_ = event.ydata
@@ -347,7 +353,6 @@ class VastInterfaceController(GUIController):
         return [head] + body
 
     def on_click(self, event):
-
         if event.button == 1:
             # in pixels...
             new_position = self.get_relative_position()
@@ -377,7 +382,6 @@ class VastInterfaceController(GUIController):
         self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
 
     def update_text(self):
-
         relative_position_um = self.get_relative_position() * self.units
         
         tstr =  f"x: {relative_position_um['x']:.2f} um\t" \
@@ -389,7 +393,6 @@ class VastInterfaceController(GUIController):
         self.text_var.set(tstr)
 
     def mousewheel_axis(self, scrollbar, delta, axis):
-
         # get scrollbar range
         s_min = int(scrollbar.cget('from'))
         s_max = int(scrollbar.cget('to'))
@@ -406,7 +409,9 @@ class VastInterfaceController(GUIController):
             a_min=s_min,
             a_max=s_max
         )
-        
+
+        print(delta, new_pos)
+
         # update the scrollbar
         scrollbar.set(new_pos)
 
@@ -432,7 +437,6 @@ class VastInterfaceController(GUIController):
         return self.current_position - self.global_origin
 
     def draw_fish(self):
-
         # clear the plot
         ax = self.fish_widget.ax
         ax.clear()
@@ -442,7 +446,9 @@ class VastInterfaceController(GUIController):
         v_idx = int(self.current_position['theta'])
         y_idx = int(self.current_position[AXIS_MAPPING[1]])
 
-        if self.do_projection.get():
+        do_projection = self.do_projection.get()
+
+        if do_projection:
             image_to_display = self.projections[chan][v_idx]
         else:
             image_to_display = self.images[chan][v_idx][y_idx]
@@ -508,8 +514,13 @@ class VastInterfaceController(GUIController):
             x = abs_pos['x']
             y = abs_pos['m']
             
-            color = [0, 1, 0] if pos['y'] == curr['y'] else [0.7, 0.1, 0.1]
-            weight = 'bold' if pos['y'] == curr['y'] else 'normal'
+            if pos['y'] == curr['y'] or do_projection:
+                color = [0, 1, 0]
+                weight = 'bold'
+            else:
+                color = [0.7, 0.15, 0.15]
+                weight = 'normal'              
+
             ax.text(x, y, i, color=color, fontdict={'weight': weight})
 
         # label axes
@@ -577,8 +588,6 @@ class VastInterfaceController(GUIController):
 
         nose_pos = np.argmax(trace)
 
-        # ax.vlines(nose_pos, ymin=0, ymax=len(im), linestyles='--', color='g')        
-
         # return the nose position along x: pixels
         return nose_pos
 
@@ -629,9 +638,6 @@ class VastInterfaceController(GUIController):
 
         recent_chans.sort()
         recent_views.sort()
-
-        # middle slice index
-        # slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
 
         return recent_chans, recent_views
 

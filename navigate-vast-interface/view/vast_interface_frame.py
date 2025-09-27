@@ -137,10 +137,10 @@ class VastInterfaceFrame(ttk.Frame):
         done_button.grid(row=0, column=9, sticky=tk.NW)
         self.buttons["done"] = done_button
 
-        # set z-focus origin button
-        clear_button = ttk.Button(axis_tools_frame, text="Clear All")
-        clear_button.grid(row=0, column=10, sticky=tk.NW)
-        self.buttons["clear"] = clear_button
+        # reload next fish
+        reload_button = ttk.Button(axis_tools_frame, text="RELOAD")
+        reload_button.grid(row=0, column=10, sticky=tk.NW)
+        self.buttons["reload"] = reload_button
 
         # set z-focus origin button
         save_pos_button = ttk.Button(axis_tools_frame, text="Save Positions")
