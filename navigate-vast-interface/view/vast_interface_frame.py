@@ -55,7 +55,10 @@ class VastInterfaceFrame(ttk.Frame):
 
         # Text box
         self.variables['text'] = tk.StringVar()
-        self.text_label = ttk.Label(self, textvariable=self.variables['text'])
+        self.text_label = ttk.Label(self, 
+                                    textvariable=self.variables['text'], 
+                                    font=("Arial", 16, "bold")
+                                    )
         self.text_label.pack()
 
         self.fish_frame = ttk.Frame(self)

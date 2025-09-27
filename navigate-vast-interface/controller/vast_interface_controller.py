@@ -379,8 +379,13 @@ class VastInterfaceController(GUIController):
     def update_text(self):
 
         relative_position_um = self.get_relative_position() * self.units
-        tstr = f"{relative_position_um}"
-
+        
+        tstr =  f"x: {relative_position_um['x']:.2f} um\t" \
+                f"y: {relative_position_um['y']:.2f} um\t" \
+                f"m: {relative_position_um['m']:.2f} um\t" \
+                f"theta: {relative_position_um['theta']:.2f} deg\t" \
+                f"channel: {self.channel_names[self.curr_channel_idx]}"
+        
         self.text_var.set(tstr)
 
     def mousewheel_axis(self, scrollbar, delta, axis):
@@ -416,8 +421,6 @@ class VastInterfaceController(GUIController):
             self.curr_channel_idx = value
         else:
             self.current_position[axis] = value
-        
-        # self.draw_fish()
 
     def get_axis(self, axis):
         if axis == 'chan':
@@ -463,6 +466,11 @@ class VastInterfaceController(GUIController):
         ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
         ax.set_yticks(ticks)
         _ = ax.set_yticklabels(tick_labels)
+
+        # title
+        ax.set_title(
+            self.view_names[int(self.current_position['theta'])]
+        )
 
         # ORIGIN X: draw nose position
         nose_pos = self.global_origin[AXIS_MAPPING[0]]
