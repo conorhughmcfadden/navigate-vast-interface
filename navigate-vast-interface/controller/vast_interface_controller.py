@@ -410,8 +410,6 @@ class VastInterfaceController(GUIController):
             a_max=s_max
         )
 
-        print(delta, new_pos)
-
         # update the scrollbar
         scrollbar.set(new_pos)
 
