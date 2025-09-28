@@ -239,8 +239,8 @@ class VastInterfaceController(GUIController):
 
         # build vector to keep track of units
         self.units = vector(self.stage_axes)
-        self.units[AXIS_MAPPING[0]] = VAST_UM_PIX       # x (um)
-        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
+        self.units[AXIS_MAPPING[0]] = -VAST_UM_PIX       # x (um) (flip)
+        self.units[AXIS_MAPPING[1]] = -self.y_stack_step # y (um) (flip)
         self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
         self.units['theta'] = self.theta_step           # theta (degrees)
 
