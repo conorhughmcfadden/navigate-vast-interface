@@ -205,6 +205,7 @@ class VastInterfaceController(GUIController):
         # button click events
         self.reload_button.configure(command=self.load_next_fish)
         self.do_projection_check.configure(command=self.draw_fish)
+        self.path_button.configure(command=self.load_vexp)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -606,6 +607,18 @@ class VastInterfaceController(GUIController):
         slices = np.array([tifffile.imread(f) for f in im_list])
 
         return np.flip(slices, axis=1)
+
+    def update_experiment_values(self):
+        try:
+            self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
+        except:
+            pass
+
+    def load_vexp(self):
+        vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
+        self.vexp_path = vexp_file.name
+        self.update_experiment_values()
+        self.load_next_fish()
 
     def parse_vexp(self):
         tree = ET.parse(self.vexp_path)
