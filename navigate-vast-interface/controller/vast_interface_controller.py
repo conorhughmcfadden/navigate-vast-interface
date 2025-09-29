@@ -240,7 +240,7 @@ class VastInterfaceController(GUIController):
         # build vector to keep track of units
         self.units = vector(self.stage_axes)
         self.units[AXIS_MAPPING[0]] = -VAST_UM_PIX       # x (um) (flip)
-        self.units[AXIS_MAPPING[1]] = -self.y_stack_step # y (um) (flip)
+        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
         self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
         self.units['theta'] = self.theta_step           # theta (degrees)
 
@@ -249,6 +249,8 @@ class VastInterfaceController(GUIController):
         self.n_views = len(self.view_names)
         self.n_channels = len(self.channel_names)
         self.curr_channel_idx = 0
+
+        print("view_names:", self.view_names)
 
         # the working dir will be parent of views
         self.working_dir = Path(self.view_names[0]).parent.resolve()
@@ -625,20 +627,28 @@ class VastInterfaceController(GUIController):
         return parse_xml(tree.getroot())        
 
     def parse_most_recent_well(self):
-        # walk the VAST autostore path
-        walk = os.walk(Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent)
+        working_folder = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
+        
+        print(working_folder)
 
-        # get only Well folders containing images
+        # walk the VAST autostore path
+        walk = os.walk(working_folder)
+
+        # only get items from the last well
         well_items = []
+        wells = []
         for item in walk:
-            if 'Well' in item[0]:
+            if not wells:
+                wells = item[1]
+                continue
+            if wells[-1] in item[0]:
                 if item[-1]:
                     well_items += [item]
 
         # get recent channels and views
         recent_chans = []
         recent_views = []
-        for item in well_items[::-1][:2]:
+        for item in well_items[::-1]:
             for im in item[-1]:
                 chan = im.split('_')[0]
                 view = item[0]
