@@ -496,9 +496,13 @@ class VastInterfaceController(GUIController):
             self.view_names[int(self.current_position['theta'])]
         )
 
-        # ORIGIN X: draw nose position
-        nose_pos = self.global_origin[AXIS_MAPPING[0]]
-        ax.vlines(nose_pos, ymin=0, ymax=self.l, linestyles='--', color='b')
+        # ORIGIN X: draw x-origin
+        x_origin = self.global_origin[AXIS_MAPPING[0]]
+        ax.vlines(x_origin, ymin=0, ymax=self.l, linestyles='--', color='b')
+
+        # nose_pos: if different from x-origin
+        if self.nose_pos != x_origin:
+            ax.vlines(self.nose_pos, ymin=0, ymax=self.l, linestyles='--', color='g')
 
         # ORIGIN M: draw capillary top
         cap_top = self.global_origin[AXIS_MAPPING[2]]
@@ -509,14 +513,14 @@ class VastInterfaceController(GUIController):
         defocus = (2*scale/self.n_slices) * self.get_relative_position()[AXIS_MAPPING[1]]
         ax.add_patch(
             Circle(
-                xy=(nose_pos - defocus, cap_top - defocus), 
+                xy=(x_origin - defocus, cap_top - defocus), 
                 radius=abs(defocus) + 5,
                 color='b',
                 fill=(defocus == 0)
             )
         )
         ax.plot(
-            [nose_pos-scale, nose_pos+scale],
+            [x_origin-scale, x_origin+scale],
             [cap_top-scale, cap_top+scale],
             color='b',
             ls='--'
@@ -539,6 +543,7 @@ class VastInterfaceController(GUIController):
                 color = [0.7, 0.15, 0.15]
                 weight = 'normal'              
 
+            ax.scatter(x, y, marker='.', color=color)
             ax.text(x, y, i, color=color, fontdict={'weight': weight})
 
         # label axes
