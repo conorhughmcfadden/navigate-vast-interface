@@ -143,9 +143,9 @@ class VastInterfaceFrame(ttk.Frame):
         self.buttons["reload"] = reload_button
 
         # set z-focus origin button
-        save_pos_button = ttk.Button(axis_tools_frame, text="Save Positions")
-        save_pos_button.grid(row=0, column=10, sticky=tk.NW)
-        self.buttons["save_pos"] = save_pos_button
+        pull_from_mp_button = ttk.Button(axis_tools_frame, text="Pull From MP Table")
+        pull_from_mp_button.grid(row=0, column=10, sticky=tk.NW)
+        self.buttons["pull_from_mp"] = pull_from_mp_button
 
         # set z-focus origin button
         flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")

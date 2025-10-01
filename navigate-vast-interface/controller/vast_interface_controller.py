@@ -191,7 +191,7 @@ class VastInterfaceController(GUIController):
         self.path_button = self.buttons['path']
         # self.done_button = self.buttons['done']
         self.reload_button = self.buttons['reload']
-        self.save_pos_button = self.buttons['save_pos']
+        self.pull_from_mp_button = self.buttons['pull_from_mp']
         self.set_origin_button = self.buttons['set_origin']
         
         # variables
@@ -226,6 +226,7 @@ class VastInterfaceController(GUIController):
         self.do_projection_check.configure(command=self.draw_fish)
         self.path_button.configure(command=self.load_vexp)
         self.set_origin_button.configure(command=self.set_global_origin)
+        self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -245,6 +246,26 @@ class VastInterfaceController(GUIController):
 
         # go ahead and load the first fish
         self.load_next_fish()
+
+    def pull_from_mp_table(self):
+
+        multi_positions = self.parent_controller.multiposition_tab_controller.get_positions()
+
+        self.annotated_positions = []
+
+        axes = [ax.lower() for ax in multi_positions.pop(0)]
+        units = self.units
+
+        for pos in multi_positions:
+            new_vector = {}
+            for ax, val in zip(axes, pos):
+                new_vector[ax] = val/units[ax] if units[ax] else 0.0
+
+            self.annotated_positions.append(vector(new_vector))
+
+        print(self.annotated_positions)
+
+        self.draw_fish()
 
     def load_next_fish(self):
 
@@ -544,7 +565,7 @@ class VastInterfaceController(GUIController):
                 weight = 'normal'              
 
             ax.scatter(x, y, marker='.', color=color)
-            ax.text(x, y, i, color=color, fontdict={'weight': weight})
+            ax.text(x, y, i+1, color=color, fontdict={'weight': weight})
 
         # label axes
         ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
