@@ -127,29 +127,29 @@ class VastInterfaceFrame(ttk.Frame):
             "variable": append_nose_var
         }
         
-        # set z-focus origin button
-        set_focus_button = ttk.Button(axis_tools_frame, text="Set Z-Stage Origin")
-        set_focus_button.grid(row=0, column=8, sticky=tk.NW)
-        self.buttons["set_focus"] = set_focus_button
+        # set global origin button
+        set_origin_button = ttk.Button(axis_tools_frame, text="SET ORIGIN")
+        set_origin_button.grid(row=0, column=8, sticky=tk.NW)
+        self.buttons["set_origin"] = set_origin_button
 
-        # set z-focus origin button
-        done_button = ttk.Button(axis_tools_frame, text="DONE")
-        done_button.grid(row=0, column=9, sticky=tk.NW)
-        self.buttons["done"] = done_button
+        # # set z-focus origin button
+        # done_button = ttk.Button(axis_tools_frame, text="DONE")
+        # done_button.grid(row=0, column=9, sticky=tk.NW)
+        # self.buttons["done"] = done_button
 
         # reload next fish
         reload_button = ttk.Button(axis_tools_frame, text="RELOAD")
-        reload_button.grid(row=0, column=10, sticky=tk.NW)
+        reload_button.grid(row=0, column=9, sticky=tk.NW)
         self.buttons["reload"] = reload_button
 
         # set z-focus origin button
         save_pos_button = ttk.Button(axis_tools_frame, text="Save Positions")
-        save_pos_button.grid(row=0, column=11, sticky=tk.NW)
+        save_pos_button.grid(row=0, column=10, sticky=tk.NW)
         self.buttons["save_pos"] = save_pos_button
 
         # set z-focus origin button
         flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")
-        flip_yz_button.grid(row=0, column=12, sticky=tk.NW)
+        flip_yz_button.grid(row=0, column=11, sticky=tk.NW)
         self.buttons["flip_yz"] = flip_yz_button
 
         # do projection

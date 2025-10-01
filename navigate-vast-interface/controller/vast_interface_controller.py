@@ -160,6 +160,22 @@ class VastInterfaceController(GUIController):
 
         self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
 
+    def set_global_origin(self):
+        # set x-origin to nose_pos
+        self.global_origin[AXIS_MAPPING[0]] = self.nose_pos
+
+        # set z-origin to top of capillary
+        cap_peaks = self.find_capillary_boundary(view=self.reference_view)
+        self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
+
+        # set y-origin to in_focus_slice
+        self.global_origin[AXIS_MAPPING[1]] = self.in_focus_slice
+
+        print(f"Setting origin to: {self.global_origin}")
+
+        # update experiment values
+        self.update_experiment_values()
+
     def initialize(self):
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
@@ -173,16 +189,19 @@ class VastInterfaceController(GUIController):
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
-        self.done_button = self.buttons['done']
+        # self.done_button = self.buttons['done']
         self.reload_button = self.buttons['reload']
         self.save_pos_button = self.buttons['save_pos']
+        self.set_origin_button = self.buttons['set_origin']
         
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.current_position = vector(self.stage_axes, val=0.)
-        self.global_origin = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
         self.working_dir = None
+        self.in_focus_slice = 0
+        self.reference_view = 0
+        self.nose_pos = 0
 
         # projection stuff
         self.do_projection = self.widgets['project']['variable']
@@ -206,6 +225,7 @@ class VastInterfaceController(GUIController):
         self.reload_button.configure(command=self.load_next_fish)
         self.do_projection_check.configure(command=self.draw_fish)
         self.path_button.configure(command=self.load_vexp)
+        self.set_origin_button.configure(command=self.set_global_origin)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -233,6 +253,13 @@ class VastInterfaceController(GUIController):
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()    
 
+        # try to get global_origin from experiment
+        try:
+            self.global_origin = vector(self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'])
+        except KeyError:
+            print("Got key error trying to load global_origin from experiment!")
+            self.global_origin = vector(self.stage_axes, val=0.)
+
         # store step sizes from expt
         self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
         self.theta_step = float(self.vexp['AutoStSetup']['_degrees']['text'])
@@ -249,8 +276,6 @@ class VastInterfaceController(GUIController):
         self.n_views = len(self.view_names)
         self.n_channels = len(self.channel_names)
         self.curr_channel_idx = 0
-
-        print("view_names:", self.view_names)
 
         # the working dir will be parent of views
         self.working_dir = Path(self.view_names[0]).parent.resolve()
@@ -272,11 +297,11 @@ class VastInterfaceController(GUIController):
         self.chan_scrollbar.configure(from_=0, to=self.n_channels-1)
 
         # need to pick a view to calculate nose_pos, in_focus
-        reference_view = 0
+        self.reference_view = 0
 
         # compute projections and find in_focus_slice
         self.projections = {chan: [] for chan in self.images}
-        in_focus_slice = 0
+        self.in_focus_slice = 0
         for v in range(self.n_views):
             new_projection, indices = extended_depth_of_field(
                 {chan: self.images[chan][v] for chan in self.images},
@@ -285,25 +310,17 @@ class VastInterfaceController(GUIController):
                 bsize=11,
                 dark_ref_bg=False
             )
-            if v == reference_view:
-                in_focus_slice = stats.mode(indices.flatten()).mode[0]
+            if v == self.reference_view:
+                self.in_focus_slice = stats.mode(indices.flatten()).mode[0]
             for chan in self.images:
                 self.projections[chan].append(new_projection[chan])
 
         # automatically calculate nose position
-        nose_pos = self.find_nose_position()
+        self.nose_pos = self.find_nose_position()
 
-        # set x-origin to nose_pos
-        self.global_origin[AXIS_MAPPING[0]] = nose_pos
-
-        # set z-origin to top of capillary
-        cap_peaks = self.find_capillary_boundary(view=reference_view)
-        self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
-
-        # set y-origin to in_focus_slice
-        self.global_origin[AXIS_MAPPING[1]] = in_focus_slice
-        self.y_scrollbar.set(in_focus_slice)
-        self.set_axis(in_focus_slice, axis=AXIS_MAPPING[1])
+        # start with scrollbar set to in-focus slice
+        self.y_scrollbar.set(self.in_focus_slice)
+        self.set_axis(self.in_focus_slice, axis=AXIS_MAPPING[1])
 
         # first draw
         self.draw_fish()
@@ -613,14 +630,20 @@ class VastInterfaceController(GUIController):
     def update_experiment_values(self):
         try:
             self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
-        except:
-            pass
+            for ax in self.global_origin.keys():
+                self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
+        except Exception as e:
+            print("Error:", e)
+
+        print("GO in Experiment:", self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'])
+
+        # reload the fish after updating
+        self.load_next_fish()
 
     def load_vexp(self):
         vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
         self.vexp_path = vexp_file.name
         self.update_experiment_values()
-        self.load_next_fish()
 
     def parse_vexp(self):
         tree = ET.parse(self.vexp_path)
@@ -628,8 +651,6 @@ class VastInterfaceController(GUIController):
 
     def parse_most_recent_well(self):
         working_folder = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
-        
-        print(working_folder)
 
         # walk the VAST autostore path
         walk = os.walk(working_folder)
