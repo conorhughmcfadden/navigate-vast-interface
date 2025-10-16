@@ -583,7 +583,12 @@ class VastInterfaceController(GUIController):
 
         self.update_text()
 
-    def find_nose_position(self, chan="", view=0, window=5):
+    def find_nose_position(self, chan="", view=0, window=3):
+
+        # do this nicer later...
+        cap_path = r"C:\Vast\dcimg_files_saved\emptyCapillary.bmp"
+        cap_im = cv2.imread(cap_path)[:,:,0]
+        cap_im = np.flip(1. - (cap_im/255), axis=0)
 
         ax = self.fish_widget.ax
 
@@ -593,10 +598,13 @@ class VastInterfaceController(GUIController):
         # scale to prevent buffer overflow
         im = 1. - (im / 65535) # uint16
 
+        # divide out cap
+        im = im / (cap_im + 1/255)
+
         ax.imshow(im, cmap='gray')
 
         # if self.cap_image:
-        #     im = im / (255 - self.cap_image + 1)
+        #   im = im / (255 - self.cap_image + 1)
 
         # probability density
         p = im.sum(axis=0)
