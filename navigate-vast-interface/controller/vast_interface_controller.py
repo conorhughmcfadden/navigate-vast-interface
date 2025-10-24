@@ -7,6 +7,7 @@ import numpy as np
 from scipy import stats, signal
 from tkinter import filedialog
 from copy import deepcopy
+import traceback
 
 # Third party imports
 from tifffile import tifffile
@@ -191,6 +192,7 @@ class VastInterfaceController(GUIController):
         self.path_button = self.buttons['path']
         # self.done_button = self.buttons['done']
         self.reload_button = self.buttons['reload']
+        self.load_well_button = self.buttons['load_well']
         self.pull_from_mp_button = self.buttons['pull_from_mp']
         self.set_origin_button = self.buttons['set_origin']
         
@@ -199,6 +201,7 @@ class VastInterfaceController(GUIController):
         self.current_position = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
         self.working_dir = None
+        self.well = None
         self.in_focus_slice = 0
         self.reference_view = 0
         self.nose_pos = 0
@@ -223,6 +226,7 @@ class VastInterfaceController(GUIController):
 
         # button click events
         self.reload_button.configure(command=self.load_next_fish)
+        self.load_well_button.configure(command=self.load_specific_well)        
         self.do_projection_check.configure(command=self.draw_fish)
         self.path_button.configure(command=self.load_vexp)
         self.set_origin_button.configure(command=self.set_global_origin)
@@ -247,6 +251,10 @@ class VastInterfaceController(GUIController):
         # go ahead and load the first fish
         self.load_next_fish()
 
+    def load_specific_well(self):
+        well = filedialog.askdirectory(title="Choose the Well directory:", initialdir=self.working_dir)
+        self.load_next_fish(well)
+
     def pull_from_mp_table(self):
 
         multi_positions = self.parent_controller.multiposition_tab_controller.get_positions()
@@ -267,12 +275,17 @@ class VastInterfaceController(GUIController):
 
         self.draw_fish()
 
-    def load_next_fish(self):
+    def load_next_fish(self, well=None):
+
+        self.well = well
 
         # get the vexp
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()    
+
+        # working directory
+        self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
 
         # try to get global_origin from experiment
         try:
@@ -293,13 +306,17 @@ class VastInterfaceController(GUIController):
         self.units['theta'] = self.theta_step           # theta (degrees)
 
         # get channel names and view folders
-        (self.channel_names, self.view_names) = self.parse_most_recent_well()
+        try:
+            (self.channel_names, self.view_names) = self.parse_well(well)
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
         self.n_views = len(self.view_names)
         self.n_channels = len(self.channel_names)
         self.curr_channel_idx = 0
 
         # the working dir will be parent of views
-        self.working_dir = Path(self.view_names[0]).parent.resolve()
+        # self.working_dir = Path(self.view_names[0]).parent.resolve()
 
         # load images: [chan, view, slice]
         self.images = {}
@@ -672,7 +689,7 @@ class VastInterfaceController(GUIController):
         print("GO in Experiment:", self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'])
 
         # reload the fish after updating
-        self.load_next_fish()
+        self.load_next_fish(self.well)
 
     def load_vexp(self):
         vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
@@ -683,39 +700,22 @@ class VastInterfaceController(GUIController):
         tree = ET.parse(self.vexp_path)
         return parse_xml(tree.getroot())        
 
-    def parse_most_recent_well(self):
-        working_folder = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
+    def parse_well(self, well=None):
+        if not well:
+            wells = glob(os.path.join(self.working_dir, "Well_*"))
+            well = wells[-1] # most recent
 
-        # walk the VAST autostore path
-        walk = os.walk(working_folder)
+        walk = os.walk(well)
 
-        # only get items from the last well
-        well_items = []
-        wells = []
-        for item in walk:
-            if not wells:
-                wells = item[1]
+        views = []
+        for root, _, files in walk:
+            if not files:
                 continue
-            if wells[-1] in item[0]:
-                if item[-1]:
-                    well_items += [item]
+            views.append(root)
 
-        # get recent channels and views
-        recent_chans = []
-        recent_views = []
-        for item in well_items[::-1]:
-            for im in item[-1]:
-                chan = im.split('_')[0]
-                view = item[0]
-                if chan not in recent_chans:
-                    recent_chans += [chan]
-                if view not in recent_views:
-                    recent_views += [view]
+        chans = {chan.split('_')[0] for chan in files}
 
-        recent_chans.sort()
-        recent_views.sort()
-
-        return recent_chans, recent_views
+        return sorted(chans), sorted(views)
 
 class Dummy(GUIController):
 
@@ -795,7 +795,7 @@ class Dummy(GUIController):
         self.vexp = self.parse_vexp()
 
         # get channel names
-        recent_chans, recent_views = self.parse_most_recent_well()
+        recent_chans, recent_views = self.parse_well()
 
         self.channel_names = recent_chans
         self.view_names = recent_views
@@ -920,7 +920,7 @@ class Dummy(GUIController):
             except KeyError:
                 self.flip[axis].set(False)
 
-    def parse_most_recent_well(self):
+    def parse_well(self):
         # walk the VAST autostore path
         walk = os.walk(Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent)
 

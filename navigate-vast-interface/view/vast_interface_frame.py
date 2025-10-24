@@ -138,18 +138,23 @@ class VastInterfaceFrame(ttk.Frame):
         # self.buttons["done"] = done_button
 
         # reload next fish
-        reload_button = ttk.Button(axis_tools_frame, text="RELOAD")
+        reload_button = ttk.Button(axis_tools_frame, text="LOAD RECENT")
         reload_button.grid(row=0, column=9, sticky=tk.NW)
         self.buttons["reload"] = reload_button
 
+        # load specific well
+        load_well_button = ttk.Button(axis_tools_frame, text="LOAD WELL")
+        load_well_button.grid(row=0, column=10, sticky=tk.NW)
+        self.buttons["load_well"] = load_well_button
+
         # set z-focus origin button
         pull_from_mp_button = ttk.Button(axis_tools_frame, text="Pull From MP Table")
-        pull_from_mp_button.grid(row=0, column=10, sticky=tk.NW)
+        pull_from_mp_button.grid(row=0, column=11, sticky=tk.NW)
         self.buttons["pull_from_mp"] = pull_from_mp_button
 
         # set z-focus origin button
         flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")
-        flip_yz_button.grid(row=0, column=11, sticky=tk.NW)
+        flip_yz_button.grid(row=0, column=12, sticky=tk.NW)
         self.buttons["flip_yz"] = flip_yz_button
 
         # do projection
