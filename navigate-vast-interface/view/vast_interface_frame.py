@@ -126,10 +126,15 @@ class VastInterfaceFrame(ttk.Frame):
             "button": append_nose_check,
             "variable": append_nose_var
         }
-        
+
+        # manually find nose button
+        find_nose_button = ttk.Button(axis_tools_frame, text="FIND NOSE")
+        find_nose_button.grid(row=0, column=8, sticky=tk.NW)
+        self.buttons["find_nose"] = find_nose_button
+
         # set global origin button
         set_origin_button = ttk.Button(axis_tools_frame, text="SET ORIGIN")
-        set_origin_button.grid(row=0, column=8, sticky=tk.NW)
+        set_origin_button.grid(row=0, column=9, sticky=tk.NW)
         self.buttons["set_origin"] = set_origin_button
 
         # # set z-focus origin button
@@ -139,22 +144,22 @@ class VastInterfaceFrame(ttk.Frame):
 
         # reload next fish
         reload_button = ttk.Button(axis_tools_frame, text="LOAD RECENT")
-        reload_button.grid(row=0, column=9, sticky=tk.NW)
+        reload_button.grid(row=0, column=10, sticky=tk.NW)
         self.buttons["reload"] = reload_button
 
         # load specific well
         load_well_button = ttk.Button(axis_tools_frame, text="LOAD WELL")
-        load_well_button.grid(row=0, column=10, sticky=tk.NW)
+        load_well_button.grid(row=0, column=11, sticky=tk.NW)
         self.buttons["load_well"] = load_well_button
 
         # set z-focus origin button
         pull_from_mp_button = ttk.Button(axis_tools_frame, text="Pull From MP Table")
-        pull_from_mp_button.grid(row=0, column=11, sticky=tk.NW)
+        pull_from_mp_button.grid(row=0, column=12, sticky=tk.NW)
         self.buttons["pull_from_mp"] = pull_from_mp_button
 
         # set z-focus origin button
         flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")
-        flip_yz_button.grid(row=0, column=12, sticky=tk.NW)
+        flip_yz_button.grid(row=0, column=13, sticky=tk.NW)
         self.buttons["flip_yz"] = flip_yz_button
 
         # do projection
@@ -164,9 +169,9 @@ class VastInterfaceFrame(ttk.Frame):
             'button': project_check,
             'variable': project_var
         }
-        project_check.grid(row=0, column=13, sticky=tk.NW)
+        project_check.grid(row=0, column=14, sticky=tk.NW)
         ttk.Label(axis_tools_frame, text="Projection").grid(
-            row=0, column=14, sticky=tk.NW
+            row=0, column=15, sticky=tk.NW
         )
 
         axis_tools_frame.pack()

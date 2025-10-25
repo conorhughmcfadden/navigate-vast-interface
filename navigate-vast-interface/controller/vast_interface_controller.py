@@ -203,7 +203,8 @@ class VastInterfaceController(GUIController):
         self.load_well_button = self.buttons['load_well']
         self.pull_from_mp_button = self.buttons['pull_from_mp']
         self.set_origin_button = self.buttons['set_origin']
-        
+        self.find_nose_button = self.buttons['find_nose']
+
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.current_position = vector(self.stage_axes, val=0.)
@@ -212,7 +213,7 @@ class VastInterfaceController(GUIController):
         self.well = None
         self.in_focus_slice = 0
         self.reference_view = 0
-        self.nose_pos = 0
+        self.nose_pos = None
         self.setting_nose_pos = False
 
         # projection stuff
@@ -239,6 +240,7 @@ class VastInterfaceController(GUIController):
         self.do_projection_check.configure(command=self.draw_fish)
         self.path_button.configure(command=self.load_vexp)
         self.set_origin_button.configure(command=self.set_global_origin)
+        self.find_nose_button.configure(command=self.manual_find_nose_position)        
         self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
 
         # widget events
@@ -286,7 +288,9 @@ class VastInterfaceController(GUIController):
 
     def load_next_fish(self, well=None):
 
-        self.well = well
+        if well != self.well:
+            self.well = well
+            self.nose_pos = None
 
         # get the vexp
         self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
@@ -362,8 +366,9 @@ class VastInterfaceController(GUIController):
             for chan in self.images:
                 self.projections[chan].append(new_projection[chan])
 
-        # automatically calculate nose position
-        self.nose_pos = self.find_nose_position()
+        # automatically calculate nose position (if needed)
+        if self.nose_pos is None:
+            self.nose_pos = self.find_nose_position()
 
         # start with scrollbar set to in-focus slice
         self.y_scrollbar.set(self.in_focus_slice)
@@ -424,9 +429,13 @@ class VastInterfaceController(GUIController):
 
     def on_click(self, event):
         if event.button == 1:
-            # in pixels...
-            new_position = self.get_relative_position()
-            self.annotated_positions += [new_position]
+            if self.setting_nose_pos:
+                self.nose_pos = self.current_position[AXIS_MAPPING[0]]
+                self.setting_nose_pos = False
+            else:
+                # in pixels...
+                new_position = self.get_relative_position()
+                self.annotated_positions += [new_position]
         elif event.button == 3:
             # remove last
             try:
@@ -619,6 +628,10 @@ class VastInterfaceController(GUIController):
         )
 
         self.update_text()
+
+    def manual_find_nose_position(self):
+        if not self.setting_nose_pos:
+            self.setting_nose_pos = True
 
     def find_nose_position(self, chan="", view=0, window=5):
 
