@@ -389,22 +389,25 @@ class VastInterfaceController(GUIController):
         return peaks
 
     def move_crosshair(self, event):
-        # get position
-        x_ = event.xdata
-        z_ = event.ydata
-
-        # update current_position
-        self.set_axis(x_, AXIS_MAPPING[0])
-        self.set_axis(z_, AXIS_MAPPING[2])
+        # clear crosshairs
+        self.fish_widget.canvas.restore_region(self.background)
         
-        # create lines
-        self.fish_widget.lines[0].set_data([x_]*2, [0, self.l])
-        self.fish_widget.lines[1].set_data([0, self.w], [z_]*2)        
+        # x-axis
+        x_ = event.xdata
+        self.set_axis(x_, AXIS_MAPPING[0])
+        x_line = self.fish_widget.lines[0]
+        x_line.set_data([x_]*2, [0, self.l])
+        self.fish_widget.ax.draw_artist(x_line)
+
+        # z-axis
+        if not self.setting_nose_pos:
+            z_ = event.ydata
+            self.set_axis(z_, AXIS_MAPPING[2])
+            z_line = self.fish_widget.lines[1]
+            z_line.set_data([0, self.w], [z_]*2)
+            self.fish_widget.ax.draw_artist(z_line)        
 
         # blit onto frame
-        self.fish_widget.canvas.restore_region(self.background)
-        for l in self.fish_widget.lines:
-            self.fish_widget.ax.draw_artist(l)
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
         self.fish_widget.canvas.flush_events()        
 
@@ -745,11 +748,11 @@ class VastInterfaceController(GUIController):
         walk = os.walk(well)
 
         views = []
-        for root, _, files in walk:
-            if not files:
+        for root, dirs, files in walk:
+            if dirs:
                 continue
             views.append(root)
 
-        chans = {chan.split('_')[0] for chan in files}
+        chans = {chan.split('_')[0] for chan in files if ".tif" in chan}
 
         return sorted(chans), sorted(views)
