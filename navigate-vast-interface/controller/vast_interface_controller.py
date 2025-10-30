@@ -152,14 +152,17 @@ class VastInterfaceController(GUIController):
     def __init__(self, view, parent_controller : Controller = None):
         super().__init__(view, parent_controller)
 
-        # get plugin name to call events from parent_controller
-        config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
-        plugin_config = load_yaml_file(config_path)
-        self.plugin_name = plugin_config['name']
+        try:
+            # get plugin name to call events from parent_controller
+            config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
+            plugin_config = load_yaml_file(config_path)
+            self.plugin_name = plugin_config['name']
 
-        self.initialize()
+            self.initialize()
 
-        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
+            self.vast_experiment['VASTAnnotatorStatus'] = True
+        except Exception as e:
+            traceback.print_exc()
 
     def set_global_origin(self):
         # set x-origin to nose_pos
@@ -186,6 +189,13 @@ class VastInterfaceController(GUIController):
         self.update_experiment_values()
 
     def initialize(self):
+        # try to get the VAST field in Experiment, else create it
+        try:
+            self.vast_experiment = self.parent_controller.model.configuration['experiment']['VAST']
+        except KeyError:
+            self.parent_controller.model.configuration['experiment']['VAST'] = {}
+            self.initialize()
+
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
         self.buttons = self.view.buttons
@@ -198,7 +208,6 @@ class VastInterfaceController(GUIController):
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['path']
         self.path_button = self.buttons['path']
-        # self.done_button = self.buttons['done']
         self.reload_button = self.buttons['reload']
         self.load_well_button = self.buttons['load_well']
         self.pull_from_mp_button = self.buttons['pull_from_mp']
@@ -292,20 +301,25 @@ class VastInterfaceController(GUIController):
             self.well = well
             self.nose_pos = None
 
+        # try to get global_origin from experiment
+        try:
+            self.global_origin = vector(self.vast_experiment['GlobalOrigin'])
+        except KeyError:
+            print("KeyError: Failed to load global_origin from experiment! Setting to zero.")
+            self.global_origin = vector(self.stage_axes, val=0.)
+
         # get the vexp
-        self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
+        try:
+            self.vexp_path = self.vast_experiment['ExperimentFile']
+        except (KeyError, FileNotFoundError):
+            print("Could not load VEXP file from Experiment... Load manually.")
+            self.load_vexp()
+        
         self.vexp_path_var.set(self.vexp_path)
         self.vexp = self.parse_vexp()    
 
         # working directory
         self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
-
-        # try to get global_origin from experiment
-        try:
-            self.global_origin = vector(self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'])
-        except KeyError:
-            print("Got key error trying to load global_origin from experiment!")
-            self.global_origin = vector(self.stage_axes, val=0.)
 
         # store step sizes from expt
         self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
@@ -637,7 +651,7 @@ class VastInterfaceController(GUIController):
 
         # do this nicer later...
         # cap_path = r"C:\Vast\dcimg_files_saved\emptyCapillary.bmp"
-        cap_path = r"D:\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
+        cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
         cap_im = cv2.imread(cap_path)[:,:,0]
         print(cap_im.min(), cap_im.max())
         cap_im = np.flip(1. - (cap_im/255), axis=0)
@@ -733,13 +747,13 @@ class VastInterfaceController(GUIController):
 
     def update_experiment_values(self):
         try:
-            self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
-            for ax in self.global_origin.keys():
-                self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
+            self.vast_experiment['ExperimentFile'] = self.vexp_path
+            # for ax in self.global_origin.keys():
+            #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
+            self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_origin.items()}
         except Exception as e:
             print("Error:", e)
-
-        print("GO in Experiment:", self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'])
+            traceback.print_exc()
 
         # reload the fish after updating
         self.load_next_fish(self.well)
