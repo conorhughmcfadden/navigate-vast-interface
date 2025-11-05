@@ -228,6 +228,8 @@ class VastInterfaceController(GUIController):
         # projection stuff
         self.do_projection = self.widgets['project']['variable']
         self.do_projection_check = self.widgets['project']['button']
+        self.do_color = self.widgets['color']['variable']
+        self.do_color_check = self.widgets['color']['button']
 
         def set_axis_and_draw(val, ax):
             self.set_axis(int(val), ax)
@@ -247,6 +249,7 @@ class VastInterfaceController(GUIController):
         self.reload_button.configure(command=self.load_next_fish)
         self.load_well_button.configure(command=self.load_specific_well)        
         self.do_projection_check.configure(command=self.draw_fish)
+        self.do_color_check.configure(command=self.draw_fish)
         self.path_button.configure(command=self.load_vexp)
         self.set_origin_button.configure(command=self.set_global_origin)
         self.find_nose_button.configure(command=self.manual_find_nose_position)        
@@ -650,8 +653,8 @@ class VastInterfaceController(GUIController):
     def find_nose_position(self, chan="", view=0, window=5):
 
         # do this nicer later...
-        # cap_path = r"C:\Vast\dcimg_files_saved\emptyCapillary.bmp"
-        cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
+        cap_path = r"C:\Vast\dcimg_files_saved\emptyCapillary.bmp"
+        # cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
         cap_im = cv2.imread(cap_path)[:,:,0]
         print(cap_im.min(), cap_im.max())
         cap_im = np.flip(1. - (cap_im/255), axis=0)

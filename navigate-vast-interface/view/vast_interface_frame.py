@@ -174,6 +174,18 @@ class VastInterfaceFrame(ttk.Frame):
             row=0, column=15, sticky=tk.NW
         )
 
+        # do color
+        color_var = tk.BooleanVar(value=False)
+        color_check = ttk.Checkbutton(axis_tools_frame, variable=color_var)
+        self.inputs["color"] = {
+            'button': color_check,
+            'variable': color_var
+        }
+        color_check.grid(row=0, column=16, sticky=tk.NW)
+        ttk.Label(axis_tools_frame, text="Color").grid(
+            row=0, column=17, sticky=tk.NW
+        )
+
         axis_tools_frame.pack()
 
     # Getters
