@@ -541,21 +541,52 @@ class VastInterfaceController(GUIController):
         y_idx = int(self.current_position[AXIS_MAPPING[1]])
 
         do_projection = self.do_projection.get()
+        do_color = self.do_color.get()
 
         if do_projection:
             image_to_display = self.projections[chan][v_idx]
         else:
             image_to_display = self.images[chan][v_idx][y_idx]
 
-        gamma = [
-            1.00,
+        # TODO: Very hacky and unoptimized...
+        # gamma
+        gm = [
+            0.85,
             0.65,
-            0.80
+            0.45
         ]
+        cl = [
+            [0.05, 1.05],
+            [0.05, 0.3],
+            [0.10, 0.4]
+        ]
+        def gamma(c_idx: int):
+            if do_projection:
+                im = self.projections[self.channel_names[c_idx]][v_idx]
+            else:
+                im = self.images[self.channel_names[c_idx]][v_idx][y_idx]
+            # gamma
+            im = np.power(im/65535, gm[c_idx])
+            # clip
+            mi, mx = cl[c_idx]
+            im = np.clip(im, a_min=mi, a_max=mx)
+            # rescale
+            im = (im - mi) / (mx - mi)
 
-        image_to_display = np.power(image_to_display, gamma[self.curr_channel_idx])
+            return im
+            
+        if do_color:
+            im_rgb = np.zeros((3,) + image_to_display.shape)
 
-        ax.imshow(image_to_display, cmap='gray')
+            im_rgb[0] = 0.3*gamma(0) + 0.7*gamma(2)
+            im_rgb[1] = 0.3*gamma(0) + 0.7*gamma(1)
+            im_rgb[2] = 0.3*gamma(0)
+
+            ax.imshow(np.moveaxis(im_rgb, 0, -1))
+        else:
+            image_to_display = np.power(image_to_display, gm[self.curr_channel_idx])
+            ax.imshow(image_to_display, cmap='gray')
+        
 
         # SET UP AXES:
         # scale axes to VAST
@@ -621,14 +652,14 @@ class VastInterfaceController(GUIController):
             y = abs_pos['m']
             
             if pos['y'] == curr['y'] or do_projection:
-                color = [0, 1, 0]
-                weight = 'bold'
+                color = [1, 1, 1]
+                weight = 'normal'
             else:
                 color = [0.7, 0.15, 0.15]
                 weight = 'normal'              
 
-            ax.scatter(x, y, marker='.', color=color)
-            ax.text(x, y, i+1, color=color, fontdict={'weight': weight})
+            ax.scatter(x, y, s=25, facecolors='none', edgecolors=color)
+            ax.text(x+5, y+5, i+1, color=color, fontdict={'weight': weight})
 
         # label axes
         ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
