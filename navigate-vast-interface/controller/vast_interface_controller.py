@@ -379,7 +379,7 @@ class VastInterfaceController(GUIController):
                 dark_ref_bg=False
             )
             if v == self.reference_view:
-                self.in_focus_slice = stats.mode(indices.flatten()).mode[0]
+                self.in_focus_slice = stats.mode(indices.flatten()).mode
             for chan in self.images:
                 self.projections[chan].append(new_projection[chan])
 
