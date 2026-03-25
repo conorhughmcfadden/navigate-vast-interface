@@ -684,7 +684,7 @@ class VastInterfaceController(GUIController):
     def find_nose_position(self, chan="", view=0, window=5):
 
         # do this nicer later...
-        cap_path = r"C:\Vast\dcimg_files_saved\emptyCapillary.bmp"
+        cap_path = r"C:\Vast\dcimg_files\emptyCapillary.bmp"
         # cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
         cap_im = cv2.imread(cap_path)[:,:,0]
         print(cap_im.min(), cap_im.max())
