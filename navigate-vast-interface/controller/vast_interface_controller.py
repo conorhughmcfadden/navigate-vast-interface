@@ -4,12 +4,15 @@ from pathlib import Path
 import cv2
 from glob import glob
 import numpy as np
+from scipy import stats, signal
 from tkinter import filedialog
 from copy import deepcopy
+import traceback
 
 # Third party imports
 from tifffile import tifffile
 from skimage.exposure import adjust_gamma
+from matplotlib.patches import Circle
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
@@ -97,132 +100,168 @@ def extended_depth_of_field(stack : dict, ksize=5, bsize=11, order=2, ref_chan="
     # convert back to np.uint16
     output = {chan: np.uint16(output[chan]) for chan in output}
 
-    return output
+    return output, inds
+
+class vector(dict):
+    """
+        Helper dict-like class to do vector operations with labelled axes.
+    """
+    def __init__(self, d, val=0.):
+        if isinstance(d, list):
+            d = {k: val for k in d}
+        super().__init__(d)
+    
+    def __sub__(self, other):
+        if isinstance(other, (int, float)):
+            return vector({k: self[k] - other for k in self})
+        else:
+            try:
+                return vector({k: self[k] - other[k] for k in self})
+            except (TypeError, KeyError):
+                print(f"Must '-' with numeric scalar or dict with matching keys. Instead got {self} - {other}.")
+    
+    def __add__(self, other):
+        if isinstance(other, (int, float)):
+            return vector({k: self[k] + other for k in self})
+        else:
+            try:
+                return vector({k: self[k] + other[k] for k in self})
+            except (TypeError, KeyError):
+                print(f"Must '+' with numeric scalar or dict with matching keys. Instead got {self} + {other}.")
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return vector({k: self[k] * other for k in self})
+        else:
+            try:
+                return vector({k: self[k] * other[k] for k in self})
+            except (TypeError, KeyError):
+                print(f"Must '*', with numeric scalar or dict with matching keys. Instead got {self} * {other}.")
+
+    def __rmul__(self, other):
+        self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, (int, float)):
+            return self.__mul__(1 / other)
+        else:
+            print("Division only works with scalars...")    
 
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller : Controller = None):
         super().__init__(view, parent_controller)
 
-        # get plugin name to call events from parent_controller
-        config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
-        plugin_config = load_yaml_file(config_path)
-        self.plugin_name = plugin_config['name']
+        try:
+            # get plugin name to call events from parent_controller
+            config_path = os.path.join(Path(__file__).parent.parent, 'plugin_config.yml')
+            plugin_config = load_yaml_file(config_path)
+            self.plugin_name = plugin_config['name']
 
-        self.initialize()
+            self.initialize()
 
-        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = True
+            self.vast_experiment['VASTAnnotatorStatus'] = True
+        except Exception as e:
+            traceback.print_exc()
+
+    def set_global_origin(self):
+        # set x-origin to nose_pos
+        self.global_origin[AXIS_MAPPING[0]] = self.nose_pos
+
+        # set z-origin to top of capillary
+        cap_peaks = self.find_capillary_boundary(
+            chan=self.ref_channel,
+            view=self.reference_view
+            )
+        self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
+
+        # set y-origin to in_focus_slice
+        self.global_origin[AXIS_MAPPING[1]] = self.in_focus_slice
+
+        # set the config offset to the global origin
+        # stage_config = self.parent_controller.model.configuration['configuration']['microscopes'][
+        #     self.parent_controller.model.active_microscope_name
+        #     ]['stage']
+        
+        # for ax in AXIS_MAPPING:
+        #     stage_config[f"{ax}_offset"] = self.global_origin[ax]
+
+        print(f"Setting origin to: {self.global_origin}")
+
+        # update experiment values
+        self.update_experiment_values()
 
     def initialize(self):
+        # try to get the VAST field in Experiment, else create it
+        try:
+            self.vast_experiment = self.parent_controller.model.configuration['experiment']['VAST']
+        except KeyError:
+            self.parent_controller.model.configuration['experiment']['VAST'] = {}
+            self.initialize()
+
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
         self.buttons = self.view.buttons
 
         self.fish_widget = self.widgets['fish_widget']
-        self.z_scrollbar = self.widgets['z_scrollbar']
+        self.y_scrollbar = self.widgets['y_scrollbar']
+        self.theta_scrollbar = self.widgets['theta_scrollbar']
+        self.chan_scrollbar = self.widgets['chan_scrollbar']
+        
         self.text_var = self.variables['text']
-        self.vexp_path_var = self.variables['path']
-        self.path_button = self.buttons['path']
-        self.set_focus_button = self.buttons['set_focus']
-        self.done_button = self.buttons['done']
-        self.clear_button = self.buttons['clear']
-        self.save_pos_button = self.buttons['save_pos']
-        self.flip_yz_button = self.buttons['flip_yz']
+        self.vexp_path_var = self.variables['vexp_path']
+        self.vexp_path_button = self.buttons['vexp_path']
+        self.job_path_var = self.variables['job_path']
+        self.job_path_button = self.buttons['job_path']
+        self.reload_button = self.buttons['reload']
+        self.load_well_button = self.buttons['load_well']
+        self.pull_from_mp_button = self.buttons['pull_from_mp']
+        self.set_origin_button = self.buttons['set_origin']
+        self.find_nose_button = self.buttons['find_nose']
 
         # variables
-        self.perspective = 0
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
-        self.positions = []
-        self.coord = np.zeros_like(self.stage_axes, dtype=int) # (x,y,z,theta,f,m)
-        self.relative_positions = [[]]
-        self.nose_position = None
-        self.x_pos = 0
-        self.y_pos = 0
-        self.background = None
-        self.locked = False
-        self.setting_focus = False
+        self.current_position = vector(self.stage_axes, val=0.)
+        self.annotated_positions = []
         self.working_dir = None
+        self.well = None
+        self.in_focus_slice = 0
+        self.reference_view = 0
+        self.nose_pos = None
+        self.setting_nose_pos = False
+        self.background = None
+        self.ref_channel = None
 
-        self.is_stacking = True
+        # projection stuff
+        self.do_projection = self.widgets['project']['variable']
+        self.do_projection_check = self.widgets['project']['button']
+        self.do_color = self.widgets['color']['variable']
+        self.do_color_check = self.widgets['color']['button']
 
-        self.ax_i = [(np.array(self.stage_axes) == ax).argmax() for ax in AXIS_MAPPING]
+        def set_axis_and_draw(val, ax):
+            self.set_axis(int(val), ax)
+            self.draw_fish()
+        
+        # configure scrollbar commands
+        self.y_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'y'))
+        self.theta_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'theta'))
+        self.chan_scrollbar.configure(command=lambda val: set_axis_and_draw(val, 'chan'))
 
-        # flip
-        self.flip = self.widgets["flip"]["variable"]
-        self.flip_check = self.widgets["flip"]["button"]
+        # mousewheel events
+        self.y_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'y'))
+        self.theta_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'theta'))
+        self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'chan'))
 
-        # projection
-        self.project = self.widgets["project"]["variable"]
-        self.project_check = self.widgets["project"]["button"]
-
-        for axis in self.flip_check:
-            self.flip_check[axis].configure(command=self.set_flip_experiment)
-
-        self.pull_flip_from_experiment()
-
-        # focus pos
-        self.z_focus_pos = 0
-        try:
-            self.z_focus_pos = self.parent_controller.configuration['experiment']['VAST']['ZFocusPos']
-        except KeyError:
-            self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
-
-        # append nose
-        self.append_nose = self.widgets['append_nose']['variable']
-        # self.append_nose_button = self.widgets['append_nose']['button']
-
-        # vexp file path
-        self.vexp_path = self.parent_controller.configuration['experiment']['VAST']['ExperimentFile']
-        self.vexp_path_var.set(self.vexp_path)
-        self.vexp = self.parse_vexp()
-
-        # get channel names
-        recent_chans, recent_views = self.parse_most_recent_well()
-
-        self.channel_names = recent_chans
-        self.view_names = recent_views
-        self.curr_channel = 0
-        self.n_views = len(recent_views)
-        self.gammas = [1.0] * len(self.channel_names)
-
-        # get working dir
-        self.working_dir = Path(self.view_names[0]).parent.resolve()
-
-        # load fish images
-        self.images = []
-
-        for v in range(self.n_views):
-            new_view = {}
-            for chan in self.channel_names:
-                new_view[chan] = self.load_stack(
-                    # dir=self.view_names[self.n_views - v - 1],
-                    dir=self.view_names[v],
-                    chan=chan,
-                )
-            self.images += [new_view]
-
-        self.n_slices, self.l, self.w = self.images[0][self.channel_names[0]].shape
-
-        self.slice = int(self.n_slices/2)
-        self.z_scrollbar.set(self.slice)
-
-        # yStack step size
-        self.y_stack_step = self.vexp['AutoStSetup']['yStack']['_stepLenUm']
-        self.z_scrollbar.configure(from_=0, to=self.n_slices-1, command=self.z_on_update)
-
-        # compute extended depth of field
-        self.projections = {
-            'edof': [extended_depth_of_field(
-                        self.images[v], 
-                        ref_chan="",
-                        ksize=5,
-                        bsize=11,
-                        dark_ref_bg=False
-                    ) for v in range(self.n_views)]
-        }
-
-        # draw the fish widget
-        self.draw_fish()
+        # button click events
+        self.reload_button.configure(command=self.load_next_fish)
+        self.load_well_button.configure(command=self.load_specific_well)        
+        self.do_projection_check.configure(command=self.draw_fish)
+        self.do_color_check.configure(command=self.draw_fish)
+        self.vexp_path_button.configure(command=self.load_vexp)
+        self.job_path_button.configure(command=self.load_job)
+        self.set_origin_button.configure(command=self.set_global_origin)
+        self.find_nose_button.configure(command=self.manual_find_nose_position)        
+        self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -236,166 +275,350 @@ class VastInterfaceController(GUIController):
         )
         
         self.fish_widget.fig.canvas.mpl_connect(
-            'key_press_event',
-            self.key_press
-        )
-
-        self.fish_widget.fig.canvas.mpl_connect(
             'scroll_event',
-            self.mouse_wheel
+            lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
         )
 
-        self.path_button.configure(command=self.load_vexp)
-        self.set_focus_button.configure(command=self.set_focus)
-        self.done_button.configure(command=self.close)
-        self.clear_button.configure(command=self.initialize)
-        self.save_pos_button.configure(command=self.save_positions)
-        self.flip_yz_button.configure(command=self.flip_yz)
-        self.project_check.configure(command=self.draw_fish)
+        # go ahead and load the first fish
+        self.load_next_fish()
 
-    def save_positions(self):
-        output = np.vstack((
-            np.asarray(self.nose_position),
-            np.asarray(self.positions)
-        ))
+    def load_specific_well(self):
+        well = filedialog.askdirectory(title="Choose the Well directory:", initialdir=self.working_dir)
+        self.load_next_fish(well)
 
-        print(f"Saving...\n{output}\n... to {self.working_dir}")
+    def pull_from_mp_table(self):
 
-        np.savetxt(
-            fname = os.path.join(self.working_dir, f"positions.txt"),
-            X = output,
-            delimiter = '\t'
-        )
+        multi_positions = self.parent_controller.multiposition_tab_controller.get_positions()
 
-    def z_on_update(self, val):
-        z_slice = int(val)
+        self.annotated_positions = []
 
-        if z_slice != self.slice:
-            self.slice = z_slice
-            self.draw_fish()
+        axes = [ax.lower() for ax in multi_positions.pop(0)]
+        units = self.units
 
-    def flip_yz(self):
-        self.images.reverse()
+        for pos in multi_positions:
+            new_vector = {}
+            for ax, val in zip(axes, pos):
+                new_vector[ax] = val/units[ax] if units[ax] else 0.0
+
+            self.annotated_positions.append(vector(new_vector))
+
+        print(self.annotated_positions)
+
         self.draw_fish()
 
-    def set_focus(self):
-        self.setting_focus = True
-        self.perspective = 1
-        self.locked = False
-        self.set_focus_button.state(['disabled'])
-        self.draw_fish()
+    def load_next_fish(self, well=None):
 
-    def set_flip_experiment(self):
+        if well != self.well:
+            self.well = well
+            self.nose_pos = None
+
+        # try to get global_origin from experiment
         try:
-            for axis in self.flip:
-                self.parent_controller.configuration['experiment']['VAST']['Flip'][axis] = self.flip[axis].get()
+            self.global_origin = vector(self.vast_experiment['GlobalOrigin'])
         except KeyError:
-            self.parent_controller.configuration['experiment']['VAST']['Flip'] = {}
-            self.set_flip_experiment()
-        
-        self.update_experiment_values()
+            print("KeyError: Failed to load global_origin from experiment! Setting to zero.")
+            self.global_origin = vector(self.stage_axes, val=0.)
 
-    def pull_flip_from_experiment(self):
-        for axis in self.flip:
+        # get the vexp
+        try:
+            self.vexp_path = self.vast_experiment['ExperimentFile']
+        except (KeyError, FileNotFoundError):
+            print("Could not load VEXP file from Experiment... Load manually.")
+            self.load_vexp()
+        
+        # get the job
+        try:
+            self.job_path = self.vast_experiment['JobFile']
+        except (KeyError, FileNotFoundError):
+            print("Could not load JOB file from Experiment... Load manually.")
+            self.load_job()
+
+        self.vexp_path_var.set(self.vexp_path)
+        self.job_path_var.set(self.job_path)
+
+        self.vexp = self.parse_xml(self.vexp_path)   
+        self.job  = self.parse_xml(self.job_path)
+
+        # working directory
+        self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text'])
+
+        # store step sizes from expt
+        self.y_stack_step = float(self.job['yStack']['_stepLenUm']['text'])
+        self.theta_step = float(self.job['_degrees']['text'])
+
+        # build vector to keep track of units
+        self.units = vector(self.stage_axes)
+        self.units[AXIS_MAPPING[0]] = -VAST_UM_PIX       # x (um) (flip)
+        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
+        self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
+        self.units['theta'] = self.theta_step           # theta (degrees)
+
+        # get channel names and view folders
+        try:
+            (self.channel_names, self.view_names) = self.parse_well(well)
+            self.n_views = len(self.view_names)
+            self.n_channels = len(self.channel_names)      
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
+            return
+
+        # set the reference channel for image processing to Brightfield
+        # Make sure Brightfield is 1st in VAST!
+        if self.ref_channel is None:
+            self.ref_channel = self.channel_names[0]
+
+        self.curr_channel_idx = 0
+
+        # the working dir will be parent of views
+        # self.working_dir = Path(self.view_names[0]).parent.resolve()
+
+        # load images: [chan, view, slice]
+        self.images = {}
+        for chan in self.channel_names:
+            self.images[chan] = []
+            for view in self.view_names:
+                stack = self.load_stack(view, chan)
+                self.images[chan].append(stack)
+
+        # store stack dimensions
+        self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
+
+        # set scrollbar ranges
+        self.y_scrollbar.configure(from_=0, to=self.n_slices-1)
+        self.theta_scrollbar.configure(from_=0, to=self.n_views-1)
+        self.chan_scrollbar.configure(from_=0, to=self.n_channels-1)
+
+        # need to pick a view to calculate nose_pos, in_focus
+        self.reference_view = 0
+
+        # compute projections and find in_focus_slice
+        self.projections = {chan: [] for chan in self.images}
+        self.in_focus_slice = 0
+        for v in range(self.n_views):
+            new_projection, indices = extended_depth_of_field(
+                {chan: self.images[chan][v] for chan in self.images},
+                ref_chan=self.ref_channel,
+                ksize=5,
+                bsize=11,
+                dark_ref_bg=False
+            )
+            if v == self.reference_view:
+                self.in_focus_slice = stats.mode(indices.flatten()).mode
+            for chan in self.images:
+                self.projections[chan].append(new_projection[chan])
+
+        # automatically calculate nose position (if needed)
+        if self.nose_pos is None:
+            self.nose_pos = self.find_nose_position(
+                chan=self.ref_channel,
+            )
+
+        # start with scrollbar set to in-focus slice
+        self.y_scrollbar.set(self.in_focus_slice)
+        self.set_axis(self.in_focus_slice, axis=AXIS_MAPPING[1])
+
+        # first draw
+        self.draw_fish()
+
+    def find_capillary_boundary(self, chan="", view=0):
+        im = self.projections[chan][view]
+
+        profile = im.sum(axis=1)
+
+        # normalize and invert
+        profile -= profile.min()
+        profile = 1 - profile/profile.max()
+
+        # find top two peaks
+        peaks = signal.find_peaks(profile)[0]
+        inds = np.argsort([profile[p] for p in peaks])[::-1][:2]
+        peaks = peaks[inds]
+
+        return peaks
+
+    def move_crosshair(self, event):
+        # clear crosshairs
+        if self.background is not None:
+            self.fish_widget.canvas.restore_region(self.background)
+        else:
+            return
+        
+        # x-axis
+        x_ = event.xdata
+        self.set_axis(x_, AXIS_MAPPING[0])
+        x_line = self.fish_widget.lines[0]
+        x_line.set_data([x_]*2, [0, self.l])
+        self.fish_widget.ax.draw_artist(x_line)
+
+        # z-axis
+        if not self.setting_nose_pos:
+            z_ = event.ydata
+            self.set_axis(z_, AXIS_MAPPING[2])
+            z_line = self.fish_widget.lines[1]
+            z_line.set_data([0, self.w], [z_]*2)
+            self.fish_widget.ax.draw_artist(z_line)        
+
+        # blit onto frame
+        self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
+        self.fish_widget.canvas.flush_events()        
+
+        # update text
+        self.update_text()
+
+    @staticmethod
+    def format_vectors_to_table(vector_list : list[vector]):
+
+        head = [ax.upper() for ax in vector_list[0]]
+        body = [list(v.values()) for v in vector_list]
+
+        return [head] + body
+
+    def on_click(self, event):
+        if event.button == 1:
+            if self.setting_nose_pos:
+                self.nose_pos = self.current_position[AXIS_MAPPING[0]]
+                self.setting_nose_pos = False
+            else:
+                # in pixels...
+                new_position = self.get_relative_position()
+                self.annotated_positions += [new_position]
+        elif event.button == 3:
+            # remove last
             try:
-                self.flip[axis].set(self.parent_controller.configuration['experiment']['VAST']['Flip'][axis])
-            except KeyError:
-                self.flip[axis].set(False)
+                self.annotated_positions.pop(-1)
+            except IndexError:
+                pass
 
-    def parse_most_recent_well(self):
-        # walk the VAST autostore path
-        walk = os.walk(Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent)
+        self.update_positions()
+        self.draw_fish()
 
-        # get only Well folders containing images
-        well_items = []
-        for item in walk:
-            if 'Well' in item[0]:
-                if item[-1]:
-                    well_items += [item]
+    def update_positions(self):
+        if self.annotated_positions:
+            self.update_multiposition_controller(
+                self.format_vectors_to_table(
+                    [v * self.units for v in self.annotated_positions]
+                )
+            )
+        else:
+            self.update_multiposition_controller([])
 
-        # get recent channels and views
-        recent_chans = []
-        recent_views = []
-        for item in well_items[::-1][:2]:
-            for im in item[-1]:
-                chan = im.split('_')[0]
-                view = item[0]
-                if chan not in recent_chans:
-                    recent_chans += [chan]
-                if view not in recent_views:
-                    recent_views += [view]
+    def update_multiposition_controller(self, multi_positions):
+        self.parent_controller.model.configuration["multi_positions"] = multi_positions
+        self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
 
-        recent_chans.sort()
-        recent_views.sort()
-
-        # middle slice index
-        # slice = int(len(well_items[-1][-1])/len(recent_chans)/2)
-
-        return recent_chans, recent_views
-
-    def load_vexp(self):
-        vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
-        self.vexp_path = vexp_file.name
-        self.update_experiment_values()
-        self.initialize()
-
-    def parse_vexp(self):
-        tree = ET.parse(self.vexp_path)
-        return parse_xml(tree.getroot())
-
-    def close(self):
-        self.parent_controller.model.configuration['experiment']['VAST']['VASTAnnotatorStatus'] = False
-
-    def update_experiment_values(self):
-        # if np.size(self.relative_positions):
-        #     # self.parent_controller.model.configuration['experiment']['MultiPositions'] = self.relative_positions
-        #     self.parent_controller.model.configuration["multi_positions"] = self.relative_positions
-        #     self.parent_controller.model.configuration["experiment"]["MicroscopeState"][
-        #         "multiposition_count"
-        #     ] = len(self.relative_positions)
+    def update_text(self):
+        relative_position_um = self.get_relative_position() * self.units
         
-        if self.vexp_path:
-            self.parent_controller.configuration['experiment']['VAST']['ExperimentFile'] = self.vexp_path
+        tstr =  f"x: {relative_position_um['x']:.2f} um\t" \
+                f"y: {relative_position_um['y']:.2f} um\t" \
+                f"m: {relative_position_um['m']:.2f} um\t" \
+                f"theta: {relative_position_um['theta']:.2f} deg\t" \
+                f"channel: {self.channel_names[self.curr_channel_idx]}"
+        
+        self.text_var.set(tstr)
 
-        if self.z_focus_pos:
-            self.parent_controller.configuration['experiment']['VAST']['ZFocusPos'] = self.z_focus_pos
+    def mousewheel_axis(self, scrollbar, delta, axis):
+        # get scrollbar range
+        s_min = int(scrollbar.cget('from'))
+        s_max = int(scrollbar.cget('to'))
 
-    def load_stack(self, dir, chan=""):
-        im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
-        im_list.sort()
+        # clip step
+        delta = np.clip(delta, a_min=-1, a_max=1)
+        
+        # invert scrolling
+        delta = -delta
 
-        slices = np.array([tifffile.imread(f) for f in im_list])
-
-        return np.flip(slices, axis=1)
-
-    def load_image(self, dir, chan="", slice=3):
-        im_path = os.path.join(
-            dir,
-            f"{chan}_{slice}.tiff"
+        # update pos within range
+        new_pos = np.clip(
+            self.get_axis(axis) + delta,
+            a_min=s_min,
+            a_max=s_max
         )
 
-        im = tifffile.imread(im_path)
-        return np.flip(im, axis=0)
+        # update the scrollbar
+        scrollbar.set(new_pos)
+
+        # update axis
+        self.set_axis(new_pos, axis)
+
+    def set_axis(self, value, axis):
+        if value is None:
+            return
+        
+        if axis == 'chan':
+            self.curr_channel_idx = value
+        else:
+            self.current_position[axis] = value
+
+    def get_axis(self, axis):
+        if axis == 'chan':
+            return self.curr_channel_idx
+        else:
+            return self.current_position[axis]
+
+    def get_relative_position(self):
+        return self.current_position - self.global_origin
 
     def draw_fish(self):
+        # clear the plot
         ax = self.fish_widget.ax
-
-        # clear axes
         ax.clear()
 
-        # initialize plot
-        chan = self.channel_names[self.curr_channel]
-        
-        if self.project.get():
-            image_to_display = self.projections['edof'][self.perspective][chan]
+        # index the image to display
+        chan = self.channel_names[self.curr_channel_idx]
+        v_idx = int(self.current_position['theta'])
+        y_idx = int(self.current_position[AXIS_MAPPING[1]])
+
+        do_projection = self.do_projection.get()
+        do_color = self.do_color.get()
+
+        if do_projection:
+            image_to_display = self.projections[chan][v_idx]
         else:
-            image_to_display = self.images[self.perspective][chan][self.slice]
+            image_to_display = self.images[chan][v_idx][y_idx]
 
-        ax.imshow(
-            adjust_gamma(image_to_display, self.gammas[self.curr_channel]),
-            cmap='gray'
-        )
+        # TODO: Very hacky and unoptimized...
+        # gamma
+        gm = [
+            0.85,
+            0.65,
+            0.45
+        ]
+        cl = [
+            [0.05, 1.05],
+            [0.05, 0.3],
+            [0.10, 0.4]
+        ]
+        def gamma(c_idx: int):
+            if do_projection:
+                im = self.projections[self.channel_names[c_idx]][v_idx]
+            else:
+                im = self.images[self.channel_names[c_idx]][v_idx][y_idx]
+            # gamma
+            im = np.power(im/65535, gm[c_idx])
+            # clip
+            mi, mx = cl[c_idx]
+            im = np.clip(im, a_min=mi, a_max=mx)
+            # rescale
+            im = (im - mi) / (mx - mi)
 
+            return im
+            
+        if do_color:
+            im_rgb = np.zeros((3,) + image_to_display.shape)
+
+            im_rgb[0] = 0.3*gamma(0) + 0.7*gamma(2)
+            im_rgb[1] = 0.3*gamma(0) + 0.7*gamma(1)
+            im_rgb[2] = 0.3*gamma(0)
+
+            ax.imshow(np.moveaxis(im_rgb, 0, -1))
+        else:
+            image_to_display = np.power(image_to_display, gm[self.curr_channel_idx])
+            ax.imshow(image_to_display, cmap='gray')
+        
+
+        # SET UP AXES:
         # scale axes to VAST
         res = 0.5
         ticks = ax.get_xticks()*VAST_UM_PIX/1000
@@ -413,194 +636,225 @@ class VastInterfaceController(GUIController):
         ax.set_yticks(ticks)
         _ = ax.set_yticklabels(tick_labels)
 
+        # title
+        ax.set_title(
+            self.view_names[int(self.current_position['theta'])]
+        )
+
+        # ORIGIN X: draw x-origin
+        x_origin = self.global_origin[AXIS_MAPPING[0]]
+        ax.vlines(x_origin, ymin=0, ymax=self.l, linestyles='--', color='b')
+
+        # nose_pos: if different from x-origin
+        if self.nose_pos != x_origin:
+            ax.vlines(self.nose_pos, ymin=0, ymax=self.l, linestyles='--', color='g')
+
+        # ORIGIN M: draw capillary top
+        cap_top = self.global_origin[AXIS_MAPPING[2]]
+        ax.hlines(cap_top, xmin=0, xmax=self.w, linestyles='--', color='b')
+
+        # ORIGIN Y: draw circle to signify y-pos
+        scale = 25
+        defocus = (2*scale/self.n_slices) * self.get_relative_position()[AXIS_MAPPING[1]]
+        ax.add_patch(
+            Circle(
+                xy=(x_origin - defocus, cap_top - defocus), 
+                radius=abs(defocus) + 5,
+                color='b',
+                fill=(defocus == 0)
+            )
+        )
+        ax.plot(
+            [x_origin-scale, x_origin+scale],
+            [cap_top-scale, cap_top+scale],
+            color='b',
+            ls='--'
+        )
+
+        # draw annotations
+        for i, pos in enumerate(self.annotated_positions):
+            curr = self.get_relative_position()
+            if pos['theta'] != curr['theta']:
+                continue
+
+            abs_pos = self.global_origin + pos
+            x = abs_pos['x']
+            y = abs_pos['m']
+            
+            if pos['y'] == curr['y'] or do_projection:
+                color = [1, 1, 1]
+                weight = 'normal'
+            else:
+                color = [0.7, 0.15, 0.15]
+                weight = 'normal'              
+
+            ax.scatter(x, y, s=25, facecolors='none', edgecolors=color)
+            ax.text(x+5, y+5, i+1, color=color, fontdict={'weight': weight})
+
         # label axes
-        ax.set_xlabel("X [mm]")
-        if self.perspective == 0:
-            ax.set_ylabel("Y [mm]")
-        else:
-            ax.set_ylabel("Z [mm]")
+        ax.set_xlabel(f"{AXIS_MAPPING[0].upper()} [mm]")
+        ax.set_ylabel(f"{AXIS_MAPPING[2].upper()} [mm]")
 
         # fix xy limits
         ax.set_xlim(0, self.w)
         ax.set_ylim(0, self.l)
 
-        # set title to current well/view
-        title = self.view_names[self.perspective].split('\\')[-1]
-        ax.set_title(title)
-
-        # display selected points
-        if self.nose_position is not None:
-            ax.scatter(self.nose_position[0], self.nose_position[self.perspective+1], marker='x', color=[0,0,1])
-        if len(self.positions) > 0:
-            c = np.array(self.positions)
-            ax.scatter(c[:,0], c[:,self.perspective+1], marker='+', color=[0,1,0])
-
-        # display focus origin, if it exists
-        if self.z_focus_pos and self.perspective == 1:
-            ax.hlines(self.z_focus_pos, 0, self.w, colors=[0,1,0], linestyles='--')
-
-        # set up canvas
+        # FINISH: set up canvas
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
             ax.bbox
         )
 
+        self.update_text()
+
+    def manual_find_nose_position(self):
+        if not self.setting_nose_pos:
+            self.setting_nose_pos = True
+
+    def find_nose_position(self, chan="", view=0, window=5):
+
+        # do this nicer later...
+        cap_path = r"C:\Vast\dcimg_files\emptyCapillary.bmp"
+        # cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
+        cap_im = cv2.imread(cap_path)[:,:,0]
+        print(cap_im.min(), cap_im.max())
+        cap_im = np.flip(1. - (cap_im/255), axis=0)
+
+        ax = self.fish_widget.ax
+
+        # im = self.projections[chan][view]
+        im = self.images[chan][view][3]
+        
+        print(im.min(), im.max())
+
+        # scale to prevent buffer overflow
+        im = 1. - (im / 65535) # uint16
+
+        # divide out cap
+        im = im / (cap_im + 1/255)
+
+        ax.imshow(im, cmap='gray')
+
+        print(im.min(), im.max())
+
+        # if self.cap_image:
+        #   im = im / (255 - self.cap_image + 1)
+
+        # project
+        p = im.sum(axis=0)
+        
+        # bg-sub
+        p -= np.mean(p)
+        p[p < 0.] = 0.
+
+        # probability density
+        p = p / p.sum()
+        x = np.arange(0, len(p))
+
+        # skewness to determine direction
+        x_mean = np.sum(x * p)
+        x_med  = np.where(np.cumsum(p) >= 0.5)[0][0]
+
+        sign = 2*int(x_med > x_mean) - 1
+
+        from scipy.signal import medfilt
+        p = np.array(
+            medfilt(p, kernel_size=15) > 0,
+            dtype=float
+        )
+
+        ax.plot(x, 100 * (p / p.max()))
+
+        # nose detector
+        tracker = 0
+        trace = []
+
+        for i in range(x[-1] - window):
+            s = p[::sign][i:(i+window)]
+            idx = s.argmin()
+
+            if idx == window-1:
+                tracker += 1
+            else:
+                tracker = 0
+        
+            trace.append(tracker)
+
+        trace = trace[::sign]
+
+        ax.plot(trace)
+
+        nose_pos = np.argmax(trace)
+
+        ax.vlines([nose_pos, x_mean, x_med], ymin=0, ymax=len(im), linestyles='--', color=['g', 'r', 'b'])
+
+        # return the nose position along x: pixels
+        return nose_pos
+
     @staticmethod
-    def coord2str(c):
-        c = np.asarray(c) * VAST_UM_PIX
-        return f"({c[0]:.2f}, {c[1]:.2f}, {c[2]:.2f})\t"
+    def load_stack(dir, chan):
+        """
+            Loads a single channel from /dir/
 
-    def update_text(self):
-        tstr = f"channel: {self.channel_names[self.curr_channel]}"
+            Output dim: [slice, row, col]
+        """
+        im_list = glob(os.path.join(dir, f"*_{chan}_*.tiff"))
 
-        tstr += "\tnose_position: "
-        p0 = 0
-        if self.nose_position is not None:
-            tstr += self.coord2str(self.nose_position)
-            p0 = self.nose_position[:3]
-            tstr += "current: "
-        
+        # sort by filename
+        def get_idx(f):
+            return int(Path(f).stem.split('_')[-1].replace('step', ''))
+        im_list.sort(key=get_idx)
+
+        slices = np.array([tifffile.imread(f) for f in im_list])
+
+        return np.flip(slices, axis=1)
+
+    def update_experiment_values(self):
         try:
-            if self.perspective == 0:
-                pos = np.asarray([self.x_pos, self.y_pos, np.nan])
-            else:
-                pos = np.asarray([self.coord[0], self.coord[1], self.y_pos])
-            tstr += self.coord2str(pos - p0)     
-        except TypeError:
-            pass
+            self.vast_experiment['ExperimentFile'] = self.vexp_path
+            self.vast_experiment['JobFile'] = self.job_path
+            # for ax in self.global_origin.keys():
+            #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
+            self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_origin.items()}
+        except Exception as e:
+            print("Error:", e)
+            traceback.print_exc()
 
-        self.text_var.set(tstr)
+        # reload the fish after updating
+        self.load_next_fish(self.well)
 
-    def move_crosshair(self, event):
-        if not self.locked:
-            # create the new data    
-            if self.perspective == 0:
-                self.x_pos = event.xdata
-            self.y_pos = event.ydata
-            if not self.setting_focus:
-                self.fish_widget.lines[0].set_data([self.x_pos]*2, [0, self.l])
-            self.fish_widget.lines[1].set_data([0, self.w], [self.y_pos]*2)
+    def load_vexp(self):
+        vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
+        self.vexp_path = vexp_file.name
+        self.update_experiment_values()
 
-            # blit new data into old frame
-            self.fish_widget.canvas.restore_region(self.background)
-            for l in self.fish_widget.lines:
-                self.fish_widget.ax.draw_artist(l)
-            self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
-            self.fish_widget.canvas.flush_events()
+    def load_job(self):
+        job_file = filedialog.askopenfile(master=self.view, defaultextension="job", title="Load VAST JOB file...")
+        self.job_path = job_file.name
+        self.update_experiment_values()
 
-            self.update_text()
+    def parse_vexp(self):
+        tree = ET.parse(self.vexp_path)
+        return parse_xml(tree.getroot())        
 
-    def update_positions(self):
-        new_position = deepcopy(self.coord)
-        
-        if self.nose_position is not None:
-            self.positions += [new_position]
-            
-            do_flip = np.ones(3)
-            for i, axis in enumerate(self.flip):
-                if self.flip[axis].get():
-                    do_flip[i] = -1
+    @staticmethod
+    def parse_xml(path: str):
+        tree = ET.parse(path)
+        return parse_xml(tree.getroot())
 
-            self.relative_positions = np.zeros(np.shape(self.positions))
-            for i, p in enumerate(self.positions):
-                self.relative_positions[i,self.ax_i[0]] = do_flip[0] * (p[0] - self.nose_position[0]) * VAST_UM_PIX
-                self.relative_positions[i,self.ax_i[1]] = do_flip[1] * (p[1] - self.nose_position[1]) * VAST_UM_PIX
-                self.relative_positions[i,self.ax_i[2]] = do_flip[2] * (p[2] - self.z_focus_pos)      * VAST_UM_PIX
+    def parse_well(self, well=None):
+        if not well:
+            wells = glob(os.path.join(self.working_dir, "Well_*"))
+            well = wells[-1] # most recent
 
-            # append nose positions to start
-            if self.append_nose.get():
-                self.relative_positions = np.vstack((
-                    np.zeros_like(self.stage_axes, dtype=int),
-                    self.relative_positions
-                ))
+        walk = os.walk(well)
 
-            # send multipositions to controller with stage_axes as the header
-            self.update_multiposition_controller(
-                [[ax.upper() for ax in self.stage_axes]] + self.relative_positions.tolist()
-            )
-            
-            self.update_experiment_values()
-        else:
-            self.nose_position = new_position
+        views = []
+        for root, dirs, files in walk:
+            if dirs:
+                continue
+            views.append(root)
 
-    def key_press(self, event):
-        # if event.key == 'down':
-        #     self.slice = np.min([self.n_slices - 1, self.slice + 1])
-        #     self.z_scrollbar.set(self.slice)
-        #     self.draw_fish()
-        # elif event.key == 'up':
-        #     self.slice = np.max([0, self.slice - 1])
-        #     self.z_scrollbar.set(self.slice)
-        #     self.draw_fish()
-        
-        try:
-            key_num = int(event.key)
-        except ValueError:
-            return
+        chans = {chan.split('_')[-2] for chan in files if ".tif" in chan}
 
-        for c, _ in enumerate(self.channel_names):
-            if key_num == (c+1):
-                self.curr_channel = c
-                self.draw_fish()
-
-    def mouse_wheel(self, event):
-        # self.gammas[self.curr_channel] += event.step * 0.02
-        # self.gammas[self.curr_channel] = np.clip(self.gammas[self.curr_channel], 0.02, 1.0)
-        
-        self.slice = np.clip(
-            self.slice - int(np.clip(event.step, a_min=-1, a_max=1)), 
-            a_min=0, 
-            a_max=self.n_slices-1
-            )
-        
-        self.z_scrollbar.set(self.slice)
-        self.draw_fish()
-
-    def on_click(self, event):
-        if event.button == 1:
-            if not self.locked:          
-                if self.setting_focus:
-                    self.z_focus_pos = self.y_pos
-                    self.setting_focus = False
-                    self.locked = True
-                    self.set_focus_button.state(['!disabled'])
-                    self.update_experiment_values()
-                elif self.perspective == 0:
-                    self.coord[0] = self.x_pos # x
-                    self.coord[1] = self.y_pos # y
-                    self.perspective = 1
-                elif self.perspective == 1:
-                    self.coord[2] = self.y_pos # z
-                    self.update_positions()
-                    self.perspective = 0
-        elif event.button == 3:
-            if self.perspective < self.n_views-1:
-                self.perspective += 1
-            else:
-                self.perspective = 0
-            
-            self.locked = self.perspective > 0
-
-        self.draw_fish()
-
-    def update_multiposition_controller(self, multi_positions):
-        self.parent_controller.model.configuration["multi_positions"] = multi_positions
-        self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
-
-    def build_vast_popup(self, event):
-        print(f"Event = {event}")
-        # try:
-        #     self.parent_controller.plugin_controller.popup_funcs[self.plugin_name]()
-        # except Exception as e:
-        #     print(e)
-
-        # reinitialize
-        self.__init__(self.view, self.parent_controller)
-
-    @property
-    def custom_events(self):
-        """Custom events for the controller"""
-        return {
-            "build_vast_popup": self.build_vast_popup,
-            "close": self.close
-        }
+        return sorted(chans), sorted(views)
