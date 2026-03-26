@@ -84,17 +84,25 @@ class VastInterfaceFrame(ttk.Frame):
 
         self.inputs['fish_widget'] = self.fish_widget
 
-        load_expt_frame = ttk.Frame(self)
+        load_frame = ttk.Frame(self)
 
-        path_button = ttk.Button(load_expt_frame, text="Load Experiment")
-        path_button.grid(row=0, column=0, sticky=tk.NW)
-        self.buttons['path'] = path_button
+        vexp_path_button = ttk.Button(load_frame, text="Load VEXP")
+        vexp_path_button.grid(row=0, column=0, sticky=tk.NW)
+        self.buttons['vexp_path'] = vexp_path_button
 
-        self.variables['path'] = tk.StringVar()
-        path_label = ttk.Label(load_expt_frame, textvariable=self.variables['path'])
-        path_label.grid(row=0, column=1, sticky=tk.NW)
+        self.variables['vexp_path'] = tk.StringVar()
+        vexp_path_label = ttk.Label(load_frame, textvariable=self.variables['vexp_path'])
+        vexp_path_label.grid(row=0, column=1, sticky=tk.NW)
 
-        load_expt_frame.pack()
+        job_path_button = ttk.Button(load_frame, text="Load JOB")
+        job_path_button.grid(row=1, column=0, sticky=tk.NW)
+        self.buttons['job_path'] = job_path_button
+
+        self.variables['job_path'] = tk.StringVar()
+        job_path_label = ttk.Label(load_frame, textvariable=self.variables['job_path'])
+        job_path_label.grid(row=1, column=1, sticky=tk.NW)
+
+        load_frame.pack()
 
         axis_tools_frame = ttk.Frame(self)
 

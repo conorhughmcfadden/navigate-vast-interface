@@ -169,7 +169,10 @@ class VastInterfaceController(GUIController):
         self.global_origin[AXIS_MAPPING[0]] = self.nose_pos
 
         # set z-origin to top of capillary
-        cap_peaks = self.find_capillary_boundary(view=self.reference_view)
+        cap_peaks = self.find_capillary_boundary(
+            chan=self.ref_channel,
+            view=self.reference_view
+            )
         self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
 
         # set y-origin to in_focus_slice
@@ -206,8 +209,10 @@ class VastInterfaceController(GUIController):
         self.chan_scrollbar = self.widgets['chan_scrollbar']
         
         self.text_var = self.variables['text']
-        self.vexp_path_var = self.variables['path']
-        self.path_button = self.buttons['path']
+        self.vexp_path_var = self.variables['vexp_path']
+        self.vexp_path_button = self.buttons['vexp_path']
+        self.job_path_var = self.variables['job_path']
+        self.job_path_button = self.buttons['job_path']
         self.reload_button = self.buttons['reload']
         self.load_well_button = self.buttons['load_well']
         self.pull_from_mp_button = self.buttons['pull_from_mp']
@@ -224,6 +229,8 @@ class VastInterfaceController(GUIController):
         self.reference_view = 0
         self.nose_pos = None
         self.setting_nose_pos = False
+        self.background = None
+        self.ref_channel = None
 
         # projection stuff
         self.do_projection = self.widgets['project']['variable']
@@ -250,7 +257,8 @@ class VastInterfaceController(GUIController):
         self.load_well_button.configure(command=self.load_specific_well)        
         self.do_projection_check.configure(command=self.draw_fish)
         self.do_color_check.configure(command=self.draw_fish)
-        self.path_button.configure(command=self.load_vexp)
+        self.vexp_path_button.configure(command=self.load_vexp)
+        self.job_path_button.configure(command=self.load_job)
         self.set_origin_button.configure(command=self.set_global_origin)
         self.find_nose_button.configure(command=self.manual_find_nose_position)        
         self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
@@ -318,15 +326,25 @@ class VastInterfaceController(GUIController):
             print("Could not load VEXP file from Experiment... Load manually.")
             self.load_vexp()
         
+        # get the job
+        try:
+            self.job_path = self.vast_experiment['JobFile']
+        except (KeyError, FileNotFoundError):
+            print("Could not load JOB file from Experiment... Load manually.")
+            self.load_job()
+
         self.vexp_path_var.set(self.vexp_path)
-        self.vexp = self.parse_vexp()    
+        self.job_path_var.set(self.job_path)
+
+        self.vexp = self.parse_xml(self.vexp_path)   
+        self.job  = self.parse_xml(self.job_path)
 
         # working directory
-        self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text']).parent
+        self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text'])
 
         # store step sizes from expt
-        self.y_stack_step = float(self.vexp['AutoStSetup']['yStack']['_stepLenUm']['text'])
-        self.theta_step = float(self.vexp['AutoStSetup']['_degrees']['text'])
+        self.y_stack_step = float(self.job['yStack']['_stepLenUm']['text'])
+        self.theta_step = float(self.job['_degrees']['text'])
 
         # build vector to keep track of units
         self.units = vector(self.stage_axes)
@@ -338,11 +356,18 @@ class VastInterfaceController(GUIController):
         # get channel names and view folders
         try:
             (self.channel_names, self.view_names) = self.parse_well(well)
+            self.n_views = len(self.view_names)
+            self.n_channels = len(self.channel_names)      
         except Exception as e:
             print(e)
             traceback.print_exc()
-        self.n_views = len(self.view_names)
-        self.n_channels = len(self.channel_names)
+            return
+
+        # set the reference channel for image processing to Brightfield
+        # Make sure Brightfield is 1st in VAST!
+        if self.ref_channel is None:
+            self.ref_channel = self.channel_names[0]
+
         self.curr_channel_idx = 0
 
         # the working dir will be parent of views
@@ -373,7 +398,7 @@ class VastInterfaceController(GUIController):
         for v in range(self.n_views):
             new_projection, indices = extended_depth_of_field(
                 {chan: self.images[chan][v] for chan in self.images},
-                ref_chan="",
+                ref_chan=self.ref_channel,
                 ksize=5,
                 bsize=11,
                 dark_ref_bg=False
@@ -385,7 +410,9 @@ class VastInterfaceController(GUIController):
 
         # automatically calculate nose position (if needed)
         if self.nose_pos is None:
-            self.nose_pos = self.find_nose_position()
+            self.nose_pos = self.find_nose_position(
+                chan=self.ref_channel,
+            )
 
         # start with scrollbar set to in-focus slice
         self.y_scrollbar.set(self.in_focus_slice)
@@ -412,7 +439,10 @@ class VastInterfaceController(GUIController):
 
     def move_crosshair(self, event):
         # clear crosshairs
-        self.fish_widget.canvas.restore_region(self.background)
+        if self.background is not None:
+            self.fish_widget.canvas.restore_region(self.background)
+        else:
+            return
         
         # x-axis
         x_ = event.xdata
@@ -768,11 +798,11 @@ class VastInterfaceController(GUIController):
 
             Output dim: [slice, row, col]
         """
-        im_list = glob(os.path.join(dir, f"{chan}_*.tiff"))
+        im_list = glob(os.path.join(dir, f"*_{chan}_*.tiff"))
 
         # sort by filename
         def get_idx(f):
-            return int(Path(f).stem.split('_')[-1])
+            return int(Path(f).stem.split('_')[-1].replace('step', ''))
         im_list.sort(key=get_idx)
 
         slices = np.array([tifffile.imread(f) for f in im_list])
@@ -782,6 +812,7 @@ class VastInterfaceController(GUIController):
     def update_experiment_values(self):
         try:
             self.vast_experiment['ExperimentFile'] = self.vexp_path
+            self.vast_experiment['JobFile'] = self.job_path
             # for ax in self.global_origin.keys():
             #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
             self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_origin.items()}
@@ -797,9 +828,19 @@ class VastInterfaceController(GUIController):
         self.vexp_path = vexp_file.name
         self.update_experiment_values()
 
+    def load_job(self):
+        job_file = filedialog.askopenfile(master=self.view, defaultextension="job", title="Load VAST JOB file...")
+        self.job_path = job_file.name
+        self.update_experiment_values()
+
     def parse_vexp(self):
         tree = ET.parse(self.vexp_path)
         return parse_xml(tree.getroot())        
+
+    @staticmethod
+    def parse_xml(path: str):
+        tree = ET.parse(path)
+        return parse_xml(tree.getroot())
 
     def parse_well(self, well=None):
         if not well:
@@ -814,6 +855,6 @@ class VastInterfaceController(GUIController):
                 continue
             views.append(root)
 
-        chans = {chan.split('_')[0] for chan in files if ".tif" in chan}
+        chans = {chan.split('_')[-2] for chan in files if ".tif" in chan}
 
         return sorted(chans), sorted(views)
