@@ -22,7 +22,8 @@ from navigate.tools.file_functions import load_yaml_file
 from navigate.tools.xml_tools import parse_xml
 import xml.etree.ElementTree as ET
 
-VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
+# VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
+VAST_UM_PIX = 3.0636 # manually measured, head-to-tail...
 
 AXIS_MAPPING = ['x', 'y', 'm']
 

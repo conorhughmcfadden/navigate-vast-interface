@@ -15,19 +15,14 @@ class VASTController:
         ):
         self.holster = holster
         self.f = None
-        # self.vast_process = subprocess.Popen(self.holster)
-        
-        # Stage starts at (x,y) = home when you boot up the VAST by default
-        # It would be nice to query the stage directly, but not sure if this can be done...
-        self.x_pos = 0
-        self.y_pos = 0
-        # Infinity motor, so abs theta pos is arbitrary!
-        self.theta_pos = 0
-        # NOTE: Keep positions in [um] and convert to uS under the hood!
-
         self.wait_until_done = False
 
+        # Establish pipe connection to VAST server
         self.connect()
+
+        # Establish coordinate system and position variables
+        self.update_xy_position_from_vast()
+        self.theta_pos = 0.0
 
     def __del__(self):
         self.close()
@@ -52,11 +47,22 @@ class VASTController:
         print("Connection established!")
 
     def get_current_position(self):
+        self.update_xy_position_from_vast()
+
         return (
             self.x_pos,
             self.y_pos,
             self.theta_pos
         )
+
+    def get_abs_position_um(self):
+        pos_str = self.send("get_xy_pos")
+        x_str, y_str = pos_str.split(",")
+        
+        return float(x_str), float(y_str)
+
+    def update_xy_position_from_vast(self):
+        self.x_pos, self.y_pos = self.get_abs_position_um()
 
     def send(self, s):
         # Write to pipe

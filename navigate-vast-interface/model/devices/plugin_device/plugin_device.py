@@ -39,6 +39,7 @@ import time
 
 # Navigate Imports
 from navigate.model.devices.stage.base import StageBase
+from navigate.model.devices.device_types import IntegratedDevice
 from navigate.tools.common_functions import load_module_from_file
 
 # Logger Setup
@@ -81,7 +82,7 @@ def build_VAST_connection() -> object:
 
     return vast_controller
 
-class PluginDevice(StageBase):
+class PluginDevice(StageBase, IntegratedDevice):
     
     """VAST implemented as a plugin device
     """
