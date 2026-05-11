@@ -167,30 +167,38 @@ class VastInterfaceController(GUIController):
 
     def set_global_origin(self):
         # set x-origin to nose_pos
-        self.global_origin[AXIS_MAPPING[0]] = self.nose_pos
+        self.global_pixel_origin[AXIS_MAPPING[0]] = self.nose_pos
 
         # set z-origin to top of capillary
         cap_peaks = self.find_capillary_boundary(
             chan=self.ref_channel,
             view=self.reference_view
             )
-        self.global_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
+        self.global_pixel_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
 
         # set y-origin to in_focus_slice
-        self.global_origin[AXIS_MAPPING[1]] = self.in_focus_slice
+        self.global_pixel_origin[AXIS_MAPPING[1]] = self.in_focus_slice
 
-        # set the config offset to the global origin
-        # stage_config = self.parent_controller.model.configuration['configuration']['microscopes'][
-        #     self.parent_controller.model.active_microscope_name
-        #     ]['stage']
-        
-        # for ax in AXIS_MAPPING:
-        #     stage_config[f"{ax}_offset"] = self.global_origin[ax]
+        # grab current absolute VAST stage position: 
+        # measure everything relative to that on navigate side
+        self.store_absolute_stage_position_from_controller()
 
-        print(f"Setting origin to: {self.global_origin}")
+        print("Absolute stage position [um]: ", self.absolute_stage_pos_um)
+        print(f"Setting pixel origin to: {self.global_pixel_origin}")
 
         # update experiment values
         self.update_experiment_values()
+
+    def store_absolute_stage_position_from_controller(self):
+
+        # stop_stage: refresh ax_pos in experiment
+        self.parent_controller.stop_stage()
+
+        # return stage pos dictionary
+        stage_pos_dict = self.parent_controller.model.get_stage_position()
+
+        # store as a vector
+        self.absolute_stage_pos_um = vector({k.split('_')[0]: v for k, v in stage_pos_dict.items()})
 
     def initialize(self):
         # try to get the VAST field in Experiment, else create it
@@ -208,7 +216,14 @@ class VastInterfaceController(GUIController):
         self.y_scrollbar = self.widgets['y_scrollbar']
         self.theta_scrollbar = self.widgets['theta_scrollbar']
         self.chan_scrollbar = self.widgets['chan_scrollbar']
-        
+
+        # axis flipping binds
+        self.do_flip = self.widgets['flip']['variable']
+        def _update_pos_trace_wrapper(*args):
+            self.update_positions()
+        for ax in self.do_flip.keys():
+            self.do_flip[ax].trace_add("write", _update_pos_trace_wrapper)
+
         self.text_var = self.variables['text']
         self.vexp_path_var = self.variables['vexp_path']
         self.vexp_path_button = self.buttons['vexp_path']
@@ -280,6 +295,9 @@ class VastInterfaceController(GUIController):
             lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
         )
 
+        # query the current absolute stage position and store it
+        self.store_absolute_stage_position_from_controller()
+
         # go ahead and load the first fish
         self.load_next_fish()
 
@@ -315,10 +333,10 @@ class VastInterfaceController(GUIController):
 
         # try to get global_origin from experiment
         try:
-            self.global_origin = vector(self.vast_experiment['GlobalOrigin'])
+            self.global_pixel_origin = vector(self.vast_experiment['GlobalOrigin'])
         except KeyError:
             print("KeyError: Failed to load global_origin from experiment! Setting to zero.")
-            self.global_origin = vector(self.stage_axes, val=0.)
+            self.global_pixel_origin = vector(self.stage_axes, val=0.)
 
         # get the vexp
         try:
@@ -496,9 +514,23 @@ class VastInterfaceController(GUIController):
 
     def update_positions(self):
         if self.annotated_positions:
+
+            # build signs vector
+            signs = vector(self.stage_axes, 1.)
+            for ax, var in self.do_flip.items():
+                signs[ax] = 2.*float(var.get()) - 1.
+
+            multipos_vectors_list = [
+                self.absolute_stage_pos_um + signs * v * self.units \
+                for v in self.annotated_positions
+            ]
+
+            # always add the origin
+            multipos_vectors_list = [self.absolute_stage_pos_um] + multipos_vectors_list
+
             self.update_multiposition_controller(
                 self.format_vectors_to_table(
-                    [v * self.units for v in self.annotated_positions]
+                    multipos_vectors_list
                 )
             )
         else:
@@ -559,7 +591,7 @@ class VastInterfaceController(GUIController):
             return self.current_position[axis]
 
     def get_relative_position(self):
-        return self.current_position - self.global_origin
+        return self.current_position - self.global_pixel_origin
 
     def draw_fish(self):
         # clear the plot
@@ -643,7 +675,7 @@ class VastInterfaceController(GUIController):
         )
 
         # ORIGIN X: draw x-origin
-        x_origin = self.global_origin[AXIS_MAPPING[0]]
+        x_origin = self.global_pixel_origin[AXIS_MAPPING[0]]
         ax.vlines(x_origin, ymin=0, ymax=self.l, linestyles='--', color='b')
 
         # nose_pos: if different from x-origin
@@ -651,7 +683,7 @@ class VastInterfaceController(GUIController):
             ax.vlines(self.nose_pos, ymin=0, ymax=self.l, linestyles='--', color='g')
 
         # ORIGIN M: draw capillary top
-        cap_top = self.global_origin[AXIS_MAPPING[2]]
+        cap_top = self.global_pixel_origin[AXIS_MAPPING[2]]
         ax.hlines(cap_top, xmin=0, xmax=self.w, linestyles='--', color='b')
 
         # ORIGIN Y: draw circle to signify y-pos
@@ -678,7 +710,7 @@ class VastInterfaceController(GUIController):
             if pos['theta'] != curr['theta']:
                 continue
 
-            abs_pos = self.global_origin + pos
+            abs_pos = self.global_pixel_origin + pos
             x = abs_pos['x']
             y = abs_pos['m']
             
@@ -814,9 +846,9 @@ class VastInterfaceController(GUIController):
         try:
             self.vast_experiment['ExperimentFile'] = self.vexp_path
             self.vast_experiment['JobFile'] = self.job_path
-            # for ax in self.global_origin.keys():
-            #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_origin[ax])
-            self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_origin.items()}
+            # for ax in self.global_pixel_origin.keys():
+            #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_pixel_origin[ax])
+            self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_pixel_origin.items()}
         except Exception as e:
             print("Error:", e)
             traceback.print_exc()
