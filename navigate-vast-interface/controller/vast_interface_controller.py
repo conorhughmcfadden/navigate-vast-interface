@@ -170,14 +170,14 @@ class VastInterfaceController(GUIController):
         self.global_pixel_origin[AXIS_MAPPING[0]] = self.nose_pos
 
         # set z-origin to top of capillary
-        cap_peaks = self.find_capillary_boundary(
+        self.global_pixel_origin[AXIS_MAPPING[2]] = self.find_capillary_boundary(
             chan=self.ref_channel,
             view=self.reference_view
-            )
-        self.global_pixel_origin[AXIS_MAPPING[2]] = cap_peaks.max() # top side
+            ).max() if self.m_focus_position is None else self.m_focus_position
 
         # set y-origin to in_focus_slice
-        self.global_pixel_origin[AXIS_MAPPING[1]] = self.in_focus_slice
+        # self.global_pixel_origin[AXIS_MAPPING[1]] = self.in_focus_slice
+        self.global_pixel_origin[AXIS_MAPPING[1]] = self.current_position[AXIS_MAPPING[1]]
 
         # grab current absolute VAST stage position: 
         # measure everything relative to that on navigate side
@@ -234,6 +234,7 @@ class VastInterfaceController(GUIController):
         self.pull_from_mp_button = self.buttons['pull_from_mp']
         self.set_origin_button = self.buttons['set_origin']
         self.find_nose_button = self.buttons['find_nose']
+        self.find_focus_button = self.buttons['find_focus']
 
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
@@ -242,9 +243,11 @@ class VastInterfaceController(GUIController):
         self.working_dir = None
         self.well = None
         self.in_focus_slice = 0
+        self.m_focus_position = None
         self.reference_view = 0
         self.nose_pos = None
         self.setting_nose_pos = False
+        self.setting_focus_pos = False
         self.background = None
         self.ref_channel = None
 
@@ -277,6 +280,7 @@ class VastInterfaceController(GUIController):
         self.job_path_button.configure(command=self.load_job)
         self.set_origin_button.configure(command=self.set_global_origin)
         self.find_nose_button.configure(command=self.manual_find_nose_position)        
+        self.find_focus_button.configure(command=self.manual_find_focus_position)
         self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
 
         # widget events
@@ -464,11 +468,12 @@ class VastInterfaceController(GUIController):
             return
         
         # x-axis
-        x_ = event.xdata
-        self.set_axis(x_, AXIS_MAPPING[0])
-        x_line = self.fish_widget.lines[0]
-        x_line.set_data([x_]*2, [0, self.l])
-        self.fish_widget.ax.draw_artist(x_line)
+        if not self.setting_focus_pos:
+            x_ = event.xdata
+            self.set_axis(x_, AXIS_MAPPING[0])
+            x_line = self.fish_widget.lines[0]
+            x_line.set_data([x_]*2, [0, self.l])
+            self.fish_widget.ax.draw_artist(x_line)
 
         # z-axis
         if not self.setting_nose_pos:
@@ -498,6 +503,9 @@ class VastInterfaceController(GUIController):
             if self.setting_nose_pos:
                 self.nose_pos = self.current_position[AXIS_MAPPING[0]]
                 self.setting_nose_pos = False
+            elif self.setting_focus_pos:
+                self.m_focus_position = self.current_position[AXIS_MAPPING[2]]
+                self.setting_focus_pos = False
             else:
                 # in pixels...
                 new_position = self.get_relative_position()
@@ -683,15 +691,18 @@ class VastInterfaceController(GUIController):
             ax.vlines(self.nose_pos, ymin=0, ymax=self.l, linestyles='--', color='g')
 
         # ORIGIN M: draw capillary top
-        cap_top = self.global_pixel_origin[AXIS_MAPPING[2]]
-        ax.hlines(cap_top, xmin=0, xmax=self.w, linestyles='--', color='b')
+        m_origin = self.global_pixel_origin[AXIS_MAPPING[2]]
+        ax.hlines(m_origin, xmin=0, xmax=self.w, linestyles='--', color='b')
+
+        if self.m_focus_position is not None and self.m_focus_position != m_origin:
+            ax.hlines(self.m_focus_position, xmin=0, xmax=self.w, linestyles='--', color='g')
 
         # ORIGIN Y: draw circle to signify y-pos
         scale = 25
         defocus = (2*scale/self.n_slices) * self.get_relative_position()[AXIS_MAPPING[1]]
         ax.add_patch(
             Circle(
-                xy=(x_origin - defocus, cap_top - defocus), 
+                xy=(x_origin - defocus, m_origin - defocus), 
                 radius=abs(defocus) + 5,
                 color='b',
                 fill=(defocus == 0)
@@ -699,7 +710,7 @@ class VastInterfaceController(GUIController):
         )
         ax.plot(
             [x_origin-scale, x_origin+scale],
-            [cap_top-scale, cap_top+scale],
+            [m_origin-scale, m_origin+scale],
             color='b',
             ls='--'
         )
@@ -739,6 +750,10 @@ class VastInterfaceController(GUIController):
         )
 
         self.update_text()
+
+    def manual_find_focus_position(self):
+        if not self.setting_focus_pos:
+            self.setting_focus_pos = True
 
     def manual_find_nose_position(self):
         if not self.setting_nose_pos:
