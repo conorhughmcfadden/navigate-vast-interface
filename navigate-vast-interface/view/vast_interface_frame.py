@@ -213,96 +213,61 @@ class VastInterfaceFrame(ttk.Frame):
         self.buttons["set_theta0"] = tk.Button(theta_step_frame, text="SET")
         self.buttons["set_theta0"].pack(side=tk.LEFT, expand=True)
 
-        # self.inputs["x0_pix"] = LabelInput(
-        #     head_loc_frame,
-        #     label="x0 [pix]:",
-        #     label_pos="left",
-        #     input_args={"width": 10}
-        # )
-        # self.inputs["x0_pix"].pack(side=tk.TOP)
+        # save/load calib buttons
 
-        # ttk.Label(pixel_size_frame, text="x0 [um]: ").pack(side=tk.LEFT)
-        # self.variables["x_um"] = tk.StringVar(value="0.0")
-        # ttk.Label(pixel_size_frame, textvariable=self.variables["x_um"]).pack(side=tk.LEFT)
+        self.buttons["save_calib"] = tk.Button(calib_tab, text="SAVE")
+        self.buttons["save_calib"].pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.buttons["load_calib"] = tk.Button(calib_tab, text="LOAD")
+        self.buttons["load_calib"].pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-
-        axis_tools_frame = ttk.Frame(self)
-
-        # append nose
-        append_nose_var = tk.BooleanVar()
-        append_nose_check = ttk.Checkbutton(axis_tools_frame, variable=append_nose_var)
-        append_nose_check.grid(row=0, column=6, sticky=tk.NW)
-        ttk.Label(axis_tools_frame, text="Append Nose Pos").grid(row=0, column=7)
-        self.inputs["append_nose"] = {
-            "button": append_nose_check,
-            "variable": append_nose_var
-        }
-
-        # manually find nose button
-        find_nose_button = ttk.Button(axis_tools_frame, text="FIND NOSE")
-        find_nose_button.grid(row=0, column=8, sticky=tk.NW)
-        self.buttons["find_nose"] = find_nose_button
-
-        # manually find nose button
-        find_focus_button = ttk.Button(axis_tools_frame, text="FIND FOCUS")
-        find_focus_button.grid(row=0, column=9, sticky=tk.NW)
-        self.buttons["find_focus"] = find_focus_button
-
-        # set global origin button
-        set_origin_button = ttk.Button(axis_tools_frame, text="SET ORIGIN")
-        set_origin_button.grid(row=0, column=10, sticky=tk.NW)
-        self.buttons["set_origin"] = set_origin_button
-
-        # # set z-focus origin button
-        # done_button = ttk.Button(axis_tools_frame, text="DONE")
-        # done_button.grid(row=0, column=9, sticky=tk.NW)
-        # self.buttons["done"] = done_button
-
-        # reload next fish
-        reload_button = ttk.Button(axis_tools_frame, text="LOAD RECENT")
-        reload_button.grid(row=0, column=11, sticky=tk.NW)
-        self.buttons["reload"] = reload_button
+        # bottom frame: utility tools frame
+        util_frame = ttk.Frame(self)
 
         # load specific well
-        load_well_button = ttk.Button(axis_tools_frame, text="LOAD WELL")
+        load_well_button = ttk.Button(util_frame, text="LOAD WELL")
         load_well_button.grid(row=0, column=12, sticky=tk.NW)
         self.buttons["load_well"] = load_well_button
 
-        # set z-focus origin button
-        pull_from_mp_button = ttk.Button(axis_tools_frame, text="Pull From MP Table")
+        # pull positions from navigate multiposition table
+        pull_from_mp_button = ttk.Button(util_frame, text="Pull From MP Table")
         pull_from_mp_button.grid(row=0, column=13, sticky=tk.NW)
         self.buttons["pull_from_mp"] = pull_from_mp_button
 
         # set z-focus origin button
-        flip_yz_button = ttk.Button(axis_tools_frame, text="Flip YZ")
-        flip_yz_button.grid(row=0, column=14, sticky=tk.NW)
-        self.buttons["flip_yz"] = flip_yz_button
+        mark_position_button = ttk.Button(util_frame, text="MARK POSITION")
+        mark_position_button.grid(row=0, column=14, sticky=tk.NW)
+        self.buttons["mark_position"] = mark_position_button
+
+        # set cursor based on current stage pos
+        query_stage_button = ttk.Button(util_frame, text="QUERY STAGE")
+        query_stage_button.grid(row=0, column=15, sticky=tk.NW)
+        self.buttons["query_stage"] = query_stage_button
 
         # do projection
         project_var = tk.BooleanVar(value=False)
-        project_check = ttk.Checkbutton(axis_tools_frame, variable=project_var)
+        project_check = ttk.Checkbutton(util_frame, variable=project_var)
         self.inputs["project"] = {
             'button': project_check,
             'variable': project_var
         }
-        project_check.grid(row=0, column=15, sticky=tk.NW)
-        ttk.Label(axis_tools_frame, text="Projection").grid(
-            row=0, column=16, sticky=tk.NW
+        project_check.grid(row=0, column=16, sticky=tk.NW)
+        ttk.Label(util_frame, text="Projection").grid(
+            row=0, column=17, sticky=tk.NW
         )
 
         # do color
         color_var = tk.BooleanVar(value=False)
-        color_check = ttk.Checkbutton(axis_tools_frame, variable=color_var)
+        color_check = ttk.Checkbutton(util_frame, variable=color_var)
         self.inputs["color"] = {
             'button': color_check,
             'variable': color_var
         }
-        color_check.grid(row=0, column=17, sticky=tk.NW)
-        ttk.Label(axis_tools_frame, text="Color").grid(
-            row=0, column=18, sticky=tk.NW
+        color_check.grid(row=0, column=18, sticky=tk.NW)
+        ttk.Label(util_frame, text="Color").grid(
+            row=0, column=19, sticky=tk.NW
         )
 
-        axis_tools_frame.pack()
+        util_frame.pack()
 
     # Getters
     def get_variables(self):

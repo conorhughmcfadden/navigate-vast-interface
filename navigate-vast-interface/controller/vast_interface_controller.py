@@ -207,9 +207,9 @@ class VastInterfaceController(GUIController):
         return vector({k.split('_')[0]: v for k, v in stage_pos_dict.items()})
 
     def set_xm_calibration(self, ax='x', i: int=0):
-        if self.cursor_pix is not None:
+        if self.cursor is not None:
             # image position [pix]
-            self.variables[f"{ax}{i}_pix"].set(float(self.cursor_pix[ax]))
+            self.variables[f"{ax}{i}_pix"].set(float(self.cursor[ax]))
 
             # stage position [um]
             stage_pos = self.get_abs_stage_pos_um_from_controller()
@@ -217,17 +217,36 @@ class VastInterfaceController(GUIController):
 
             # recalculate pixel size
             if i == 0:
-                self.global_pixel_origin[ax] = self.cursor_pix[ax]
+                self.global_pixel_origin[ax] = self.cursor[ax]
+                self.global_phys_origin[ax]  = stage_pos[ax]
             elif i == 1:
                 self.calculate_xm_pixel_size(ax)
+            
+            self.update_experiment_values()
 
     def set_y_calibration(self):
+        # stage position [um]
+        stage_pos = self.get_abs_stage_pos_um_from_controller()
+
+        y0 = int(self.curr_abs_pos_pix['y'])
         self.units['y'] = float(self.variables[f"dy_um_step"].get())
-        self.variables["y0_step"].set(self.curr_abs_pos_pix['y'])
+        
+        self.global_pixel_origin['y'] = y0
+        
+        # set the physical focus origin to the absolute y-stage position
+        self.global_phys_origin['y']  = stage_pos['y'] 
+
+        self.variables["y0_step"].set(y0)
+
+        self.update_experiment_values()
 
     def set_theta_calibration(self):
+        theta0 = int(self.curr_abs_pos_pix['theta'])
         self.units['theta'] = float(self.variables[f"dtheta_deg_step"].get())
-        self.variables["theta0_step"].set(self.curr_abs_pos_pix['theta'])
+        self.global_pixel_origin['theta'] = theta0
+        self.variables["theta0_step"].set(theta0)
+
+        self.update_experiment_values()
 
     def calculate_xm_pixel_size(self, ax='x'):
         d_pix = self.variables[f"{ax}1_pix"].get() - self.variables[f"{ax}0_pix"].get()
@@ -262,21 +281,14 @@ class VastInterfaceController(GUIController):
         for ax in self.do_flip.keys():
             self.do_flip[ax].trace_add("write", _update_pos_trace_wrapper)
 
+        # text variable
         self.text_var = self.variables['text']
-        self.reload_button = self.buttons['reload']
-        self.load_well_button = self.buttons['load_well']
-        self.pull_from_mp_button = self.buttons['pull_from_mp']
-        self.set_origin_button = self.buttons['set_origin']
-        self.find_nose_button = self.buttons['find_nose']
-        self.find_focus_button = self.buttons['find_focus']
 
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.curr_abs_pos_pix = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
-        # self.working_dir = None
         self.well = None
-        # self.in_focus_slice = 0
         self.m_focus_position = None
         self.reference_view = 0
         self.nose_pos = None
@@ -306,12 +318,13 @@ class VastInterfaceController(GUIController):
         self.chan_scrollbar.bind("<MouseWheel>", lambda event: self.mousewheel_axis(event.widget, event.delta, 'chan'))
 
         # button click events
-        self.reload_button.configure(command=self.load_next_fish)
-        self.load_well_button.configure(command=self.load_specific_well)        
+        self.buttons["load_well"].configure(command=self.load_specific_well) 
+        self.buttons["pull_from_mp"].configure(command=self.pull_from_mp_table)       
+        self.buttons["mark_position"].configure(command=self.create_new_annotated_position)
+        self.buttons["query_stage"].configure(command=self.set_cursor_based_on_stage_query)
+
         self.do_projection_check.configure(command=self.draw_fish)
         self.do_color_check.configure(command=self.draw_fish)
-        self.set_origin_button.configure(command=self.set_global_origin)
-        self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
 
         # calibration buttons
         for i in range(2):
@@ -342,7 +355,7 @@ class VastInterfaceController(GUIController):
         self.store_absolute_stage_position_from_controller()
 
         # create the reference cursor
-        self.cursor_pix = None
+        self.cursor = None
 
         # create units vector
         self.units = vector(self.stage_axes, val=1.0)
@@ -379,14 +392,8 @@ class VastInterfaceController(GUIController):
         if well != self.well:
             self.well = well
 
-        # try to get global_origin from experiment
-        try:
-            self.global_pixel_origin = vector(self.vast_experiment['GlobalOrigin'])
-        except KeyError:
-            print("KeyError: Failed to load global_origin from experiment! Setting to zero.")
-            self.global_pixel_origin = vector(self.stage_axes, val=0.)
-
-        print(f"Units: {self.units}")
+        # pull calibration from experiment
+        self.pull_calib_from_experiment()
 
         # get channel names and view folders
         try:
@@ -497,7 +504,6 @@ class VastInterfaceController(GUIController):
 
         # blit onto frame
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
-        # self.fish_widget.canvas.flush_events()        
 
         # update text
         self.update_text()
@@ -512,9 +518,9 @@ class VastInterfaceController(GUIController):
 
     def on_click(self, event):
         if event.button == 1:
-            self.cursor_pix = deepcopy(self.curr_abs_pos_pix)
+            self.cursor = deepcopy(self.curr_abs_pos_pix)
 
-            print(self.cursor_pix)
+            print(self.cursor)
 
             # if self.setting_nose_pos:
             #     self.nose_pos = self.curr_abs_pos_pix[AXIS_MAPPING[0]]
@@ -536,6 +542,23 @@ class VastInterfaceController(GUIController):
         self.update_positions()
         self.draw_fish()
 
+    def create_new_annotated_position(self):
+
+        if self.cursor is None:
+            return
+
+        # new_position = self.cursor - self.global_pixel_origin
+        self.annotated_positions += [self.cursor - self.global_pixel_origin]
+
+        # get rid of the cursor
+        self.cursor = None
+
+        # update positions list
+        self.update_positions()
+
+        # redraw
+        self.draw_fish()
+
     def update_positions(self):
         if self.annotated_positions:
 
@@ -544,13 +567,15 @@ class VastInterfaceController(GUIController):
             for ax, var in self.do_flip.items():
                 signs[ax] = 2.*float(var.get()) - 1.
 
+            physical_origin = self.global_phys_origin # in um, degrees measured from stage
+
             multipos_vectors_list = [
-                self.absolute_stage_pos_um + signs * v * self.units \
+                physical_origin + signs * v * self.units \
                 for v in self.annotated_positions
             ]
 
             # always add the origin
-            multipos_vectors_list = [self.absolute_stage_pos_um] + multipos_vectors_list
+            multipos_vectors_list = [physical_origin] + multipos_vectors_list
 
             self.update_multiposition_controller(
                 self.format_vectors_to_table(
@@ -559,6 +584,42 @@ class VastInterfaceController(GUIController):
             )
         else:
             self.update_multiposition_controller([])
+
+    def set_cursor_based_on_stage_query(self):
+
+        # query absolute stage position (um / deg)
+        physical_abs_pos = self.get_abs_stage_pos_um_from_controller()
+
+        # compute physical position relative to the saved physical origin
+        physical_rel_pos = physical_abs_pos - self.global_phys_origin
+
+        # build signs vector (same convention as in update_positions)
+        signs = vector(self.stage_axes, val=1.)
+        for ax, var in self.do_flip.items():
+            signs[ax] = 2. * float(var.get()) - 1.
+
+        # compute pixel-relative position: v = (physical_rel_pos / units) * signs
+        # safe elementwise division by units
+        pixel_rel = vector({
+            ax: (physical_rel_pos[ax] / self.units[ax]) if self.units[ax] else 0.0
+            for ax in self.stage_axes
+        })
+
+        pixel_rel = signs * pixel_rel
+
+        # integer axes: convert y/theta to integers (steps)
+        pixel_rel['y'] = int(round(pixel_rel['y']))
+        pixel_rel['theta'] = int(round(pixel_rel['theta']))
+
+        # compute absolute pixel coordinates in image space
+        pixel_abs = self.global_pixel_origin + pixel_rel
+
+        # set the cursor (use deepcopy to be safe)
+        self.cursor = deepcopy(pixel_abs)
+
+        # force a redraw so the cursor appears
+        self.update_positions()
+        self.draw_fish()
 
     def update_multiposition_controller(self, multi_positions):
         self.parent_controller.model.configuration["multi_positions"] = multi_positions
@@ -732,10 +793,10 @@ class VastInterfaceController(GUIController):
         )
 
         # draw cursor
-        if  self.cursor_pix is not None:
-            x = self.cursor_pix['x']
-            y = self.cursor_pix['m']
-            ax.scatter(x, y, s=50, marker='+', color=(0.0, 0.7, 0.2))
+        if  self.cursor is not None:
+            x = self.cursor['x']
+            y = self.cursor['m']
+            ax.scatter(x, y, s=75, marker='+', color=(0.0, 0.7, 0.2))
 
         # draw annotations
         for i, pos in enumerate(self.annotated_positions):
@@ -750,6 +811,7 @@ class VastInterfaceController(GUIController):
             if pos['y'] == curr['y'] or do_projection:
                 color = [1, 1, 1]
                 weight = 'normal'
+
             else:
                 color = [0.7, 0.15, 0.15]
                 weight = 'normal'              
@@ -791,25 +853,91 @@ class VastInterfaceController(GUIController):
 
         return np.flip(slices, axis=1)
 
+    def pull_calib_from_experiment(self):
+        
+        position_0 = vector(self.vast_experiment["Position_0"])
+        position_1 = vector(self.vast_experiment["Position_1"])
+        units      = vector(self.vast_experiment["Units"])
+
+        # init global origin [pix, steps]
+        self.global_pixel_origin = vector(self.stage_axes, val=0.)
+        self.global_pixel_origin['x'] = position_0['x']['pix']
+        self.global_pixel_origin['m'] = position_0['m']['pix']
+        self.global_pixel_origin['y'] = position_0['y']['step']
+        self.global_pixel_origin['theta'] = position_0['theta']['step']
+        
+        # units
+        self.units = units
+        
+        # init global origin [um, deg]
+        self.global_phys_origin = vector(self.stage_axes, val=0.)
+        self.global_phys_origin['x'] = position_0['x']['um']
+        self.global_phys_origin['m'] = position_0['m']['um']
+        self.global_phys_origin['y'] = position_0['y']['um']
+        self.global_phys_origin['theta'] = 0.0 # defined as zero     
+
+        # x vars
+        self.variables["x0_pix"].set(position_0['x']['pix'])
+        self.variables["x0_um"].set( position_0['x']['um'])
+        self.variables["x1_pix"].set(position_1['x']['pix'])
+        self.variables["x1_um"].set( position_1['x']['um'])
+        self.variables["dx_um_pix"].set(f"{units['x']:.3f}")
+
+        # m vars
+        self.variables["m0_pix"].set(position_0['m']['pix'])
+        self.variables["m0_um"].set( position_0['m']['um'])
+        self.variables["m1_pix"].set(position_1['m']['pix'])
+        self.variables["m1_um"].set( position_1['m']['um'])
+        self.variables["dm_um_pix"].set(f"{units['m']:.3f}")
+
+        # y vars
+        self.variables["y0_step"].set(position_0['y']['step'])
+        self.variables["dy_um_step"].set(units['y'])
+
+        # theta vars
+        self.variables["theta0_step"].set(position_0['theta']['step'])
+        self.variables["dtheta_deg_step"].set(units['theta'])      
+
     def update_experiment_values(self):
         try:
-            self.vast_experiment['ExperimentFile'] = self.vexp_path
-            self.vast_experiment['JobFile'] = self.job_path
-            # for ax in self.global_pixel_origin.keys():
-            #     self.parent_controller.configuration['experiment']['VAST']['GlobalOrigin'][ax] = float(self.global_pixel_origin[ax])
-            self.vast_experiment['GlobalOrigin'] = {ax: float(val) for ax, val in self.global_pixel_origin.items()}
+            self.vast_experiment['Position_0'] = {
+                "x": {
+                    "pix": self.global_pixel_origin['x'],
+                    "um":  self.global_phys_origin['x']
+                },
+                "m": {
+                    "pix": self.global_pixel_origin['m'],
+                    "um":  self.global_phys_origin['m']
+                },
+                "y": {
+                    "step": self.global_pixel_origin['y'],
+                    "um":   self.global_phys_origin['y']
+                },
+                "theta": {
+                    "step": self.global_pixel_origin['theta']
+                }
+            }
+
+            self.vast_experiment['Position_1'] = {
+                "x": {
+                    "pix": float(self.variables["x1_pix"].get()),
+                    "um":  float(self.variables["x1_um"].get())
+                },
+                "m": {
+                    "pix": float(self.variables["m1_pix"].get()),
+                    "um":  float(self.variables["m1_um"].get())
+                }                       
+            }
+
+            self.vast_experiment['Units'] = {ax: float(val) for ax, val in self.units.items()}
         except Exception as e:
             print("Error:", e)
             traceback.print_exc()
 
-        # reload the fish after updating
-        self.load_next_fish(self.well)
+        # redraw fish
+        self.draw_fish()
 
     def parse_well(self, well):
-        # if not well:
-        #     wells = glob(os.path.join(self.working_dir, "Well_*"))
-        #     well = wells[-1] # most recent
-
         walk = os.walk(well)
 
         views = []
