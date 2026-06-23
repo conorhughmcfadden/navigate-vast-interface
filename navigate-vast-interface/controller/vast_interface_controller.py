@@ -107,7 +107,7 @@ class vector(dict):
     """
         Helper dict-like class to do vector operations with labelled axes.
     """
-    def __init__(self, d, val=0.):
+    def __init__(self, d, val=None):
         if isinstance(d, list):
             d = {k: val for k in d}
         super().__init__(d)
@@ -148,6 +148,9 @@ class vector(dict):
         else:
             print("Division only works with scalars...")    
 
+    def __bool__(self):
+        return all(val != None for val in self.values()) and self.keys()
+
 class VastInterfaceController(GUIController):
 
     def __init__(self, view, parent_controller : Controller = None):
@@ -161,7 +164,7 @@ class VastInterfaceController(GUIController):
 
             self.initialize()
 
-            self.vast_experiment['VASTAnnotatorStatus'] = True
+            # self.vast_experiment['VASTAnnotatorStatus'] = True
         except Exception as e:
             traceback.print_exc()
 
@@ -176,8 +179,8 @@ class VastInterfaceController(GUIController):
             ).max() if self.m_focus_position is None else self.m_focus_position
 
         # set y-origin to in_focus_slice
-        # self.global_pixel_origin[AXIS_MAPPING[1]] = self.in_focus_slice
-        self.global_pixel_origin[AXIS_MAPPING[1]] = self.current_position[AXIS_MAPPING[1]]
+        # self.global_pixel_origin[AXIS_MAPPING[1]] = # self.in_focus_slice
+        self.global_pixel_origin[AXIS_MAPPING[1]] = self.curr_abs_pos_pix[AXIS_MAPPING[1]]
 
         # grab current absolute VAST stage position: 
         # measure everything relative to that on navigate side
@@ -190,15 +193,50 @@ class VastInterfaceController(GUIController):
         self.update_experiment_values()
 
     def store_absolute_stage_position_from_controller(self):
+        # store as a vector
+        self.absolute_stage_pos_um = self.get_abs_stage_pos_um_from_controller()
 
+    def get_abs_stage_pos_um_from_controller(self):
         # stop_stage: refresh ax_pos in experiment
         self.parent_controller.stop_stage()
 
         # return stage pos dictionary
         stage_pos_dict = self.parent_controller.model.get_stage_position()
 
-        # store as a vector
-        self.absolute_stage_pos_um = vector({k.split('_')[0]: v for k, v in stage_pos_dict.items()})
+        # return a vector
+        return vector({k.split('_')[0]: v for k, v in stage_pos_dict.items()})
+
+    def set_xm_calibration(self, ax='x', i: int=0):
+        if self.cursor_pix is not None:
+            # image position [pix]
+            self.variables[f"{ax}{i}_pix"].set(float(self.cursor_pix[ax]))
+
+            # stage position [um]
+            stage_pos = self.get_abs_stage_pos_um_from_controller()
+            self.variables[f"{ax}{i}_um"].set(float(stage_pos[ax]))         
+
+            # recalculate pixel size
+            if i == 0:
+                self.global_pixel_origin[ax] = self.cursor_pix[ax]
+            elif i == 1:
+                self.calculate_xm_pixel_size(ax)
+
+    def set_y_calibration(self):
+        self.units['y'] = float(self.variables[f"dy_um_step"].get())
+        self.variables["y0_step"].set(self.curr_abs_pos_pix['y'])
+
+    def set_theta_calibration(self):
+        self.units['theta'] = float(self.variables[f"dtheta_deg_step"].get())
+        self.variables["theta0_step"].set(self.curr_abs_pos_pix['theta'])
+
+    def calculate_xm_pixel_size(self, ax='x'):
+        d_pix = self.variables[f"{ax}1_pix"].get() - self.variables[f"{ax}0_pix"].get()
+        d_um  = self.variables[f"{ax}1_um"].get()  - self.variables[f"{ax}0_um"].get()       
+
+        d_um_pix = abs(d_um / d_pix)
+        
+        self.units[ax] = d_um_pix
+        self.variables[f"d{ax}_um_pix"].set(f"{d_um_pix:.3f}")
 
     def initialize(self):
         # try to get the VAST field in Experiment, else create it
@@ -225,10 +263,6 @@ class VastInterfaceController(GUIController):
             self.do_flip[ax].trace_add("write", _update_pos_trace_wrapper)
 
         self.text_var = self.variables['text']
-        self.vexp_path_var = self.variables['vexp_path']
-        self.vexp_path_button = self.buttons['vexp_path']
-        self.job_path_var = self.variables['job_path']
-        self.job_path_button = self.buttons['job_path']
         self.reload_button = self.buttons['reload']
         self.load_well_button = self.buttons['load_well']
         self.pull_from_mp_button = self.buttons['pull_from_mp']
@@ -238,11 +272,11 @@ class VastInterfaceController(GUIController):
 
         # variables
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
-        self.current_position = vector(self.stage_axes, val=0.)
+        self.curr_abs_pos_pix = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
-        self.working_dir = None
+        # self.working_dir = None
         self.well = None
-        self.in_focus_slice = 0
+        # self.in_focus_slice = 0
         self.m_focus_position = None
         self.reference_view = 0
         self.nose_pos = None
@@ -276,12 +310,17 @@ class VastInterfaceController(GUIController):
         self.load_well_button.configure(command=self.load_specific_well)        
         self.do_projection_check.configure(command=self.draw_fish)
         self.do_color_check.configure(command=self.draw_fish)
-        self.vexp_path_button.configure(command=self.load_vexp)
-        self.job_path_button.configure(command=self.load_job)
         self.set_origin_button.configure(command=self.set_global_origin)
-        self.find_nose_button.configure(command=self.manual_find_nose_position)        
-        self.find_focus_button.configure(command=self.manual_find_focus_position)
         self.pull_from_mp_button.configure(command=self.pull_from_mp_table)
+
+        # calibration buttons
+        for i in range(2):
+            for ax in ['x', 'm']:
+                self.buttons[f"set_{ax}{i}"].configure(
+                    command=lambda ax=ax, i=i: self.set_xm_calibration(ax=ax, i=i)
+                    )
+        self.buttons["set_y0"].configure(command=self.set_y_calibration)
+        self.buttons["set_theta0"].configure(command=self.set_theta_calibration)
 
         # widget events
         self.fish_widget.fig.canvas.mpl_connect(
@@ -302,11 +341,17 @@ class VastInterfaceController(GUIController):
         # query the current absolute stage position and store it
         self.store_absolute_stage_position_from_controller()
 
+        # create the reference cursor
+        self.cursor_pix = None
+
+        # create units vector
+        self.units = vector(self.stage_axes, val=1.0)
+
         # go ahead and load the first fish
-        self.load_next_fish()
+        # self.load_next_fish()
 
     def load_specific_well(self):
-        well = filedialog.askdirectory(title="Choose the Well directory:", initialdir=self.working_dir)
+        well = filedialog.askdirectory(title="Choose the Well directory:")
         self.load_next_fish(well)
 
     def pull_from_mp_table(self):
@@ -329,11 +374,10 @@ class VastInterfaceController(GUIController):
 
         self.draw_fish()
 
-    def load_next_fish(self, well=None):
+    def load_next_fish(self, well):
 
         if well != self.well:
             self.well = well
-            self.nose_pos = None
 
         # try to get global_origin from experiment
         try:
@@ -342,39 +386,7 @@ class VastInterfaceController(GUIController):
             print("KeyError: Failed to load global_origin from experiment! Setting to zero.")
             self.global_pixel_origin = vector(self.stage_axes, val=0.)
 
-        # get the vexp
-        try:
-            self.vexp_path = self.vast_experiment['ExperimentFile']
-        except (KeyError, FileNotFoundError):
-            print("Could not load VEXP file from Experiment... Load manually.")
-            self.load_vexp()
-        
-        # get the job
-        try:
-            self.job_path = self.vast_experiment['JobFile']
-        except (KeyError, FileNotFoundError):
-            print("Could not load JOB file from Experiment... Load manually.")
-            self.load_job()
-
-        self.vexp_path_var.set(self.vexp_path)
-        self.job_path_var.set(self.job_path)
-
-        self.vexp = self.parse_xml(self.vexp_path)   
-        self.job  = self.parse_xml(self.job_path)
-
-        # working directory
-        self.working_dir = Path(self.vexp['AutoStSetup']['_storeLocation']['text'])
-
-        # store step sizes from expt
-        self.y_stack_step = float(self.job['yStack']['_stepLenUm']['text'])
-        self.theta_step = float(self.job['_degrees']['text'])
-
-        # build vector to keep track of units
-        self.units = vector(self.stage_axes)
-        self.units[AXIS_MAPPING[0]] = -VAST_UM_PIX       # x (um) (flip)
-        self.units[AXIS_MAPPING[1]] = self.y_stack_step # y (um)
-        self.units[AXIS_MAPPING[2]] = VAST_UM_PIX       # m (um)
-        self.units['theta'] = self.theta_step           # theta (degrees)
+        print(f"Units: {self.units}")
 
         # get channel names and view folders
         try:
@@ -412,34 +424,34 @@ class VastInterfaceController(GUIController):
         self.theta_scrollbar.configure(from_=0, to=self.n_views-1)
         self.chan_scrollbar.configure(from_=0, to=self.n_channels-1)
 
-        # need to pick a view to calculate nose_pos, in_focus
-        self.reference_view = 0
+        # # need to pick a view to calculate nose_pos, in_focus
+        # self.reference_view = 0
 
-        # compute projections and find in_focus_slice
-        self.projections = {chan: [] for chan in self.images}
-        self.in_focus_slice = 0
-        for v in range(self.n_views):
-            new_projection, indices = extended_depth_of_field(
-                {chan: self.images[chan][v] for chan in self.images},
-                ref_chan=self.ref_channel,
-                ksize=5,
-                bsize=11,
-                dark_ref_bg=False
-            )
-            if v == self.reference_view:
-                self.in_focus_slice = stats.mode(indices.flatten()).mode
-            for chan in self.images:
-                self.projections[chan].append(new_projection[chan])
+        # # compute projections and find in_focus_slice
+        # self.projections = {chan: [] for chan in self.images}
+        # # # self.in_focus_slice = 0
+        # for v in range(self.n_views):
+        #     new_projection, indices = extended_depth_of_field(
+        #         {chan: self.images[chan][v] for chan in self.images},
+        #         ref_chan=self.ref_channel,
+        #         ksize=5,
+        #         bsize=11,
+        #         dark_ref_bg=False
+        #     )
+        #     # if v == self.reference_view:
+        #     #     # self.in_focus_slice = stats.mode(indices.flatten()).mode
+        #     for chan in self.images:
+        #         self.projections[chan].append(new_projection[chan])
 
         # automatically calculate nose position (if needed)
-        if self.nose_pos is None:
-            self.nose_pos = self.find_nose_position(
-                chan=self.ref_channel,
-            )
+        # if self.nose_pos is None:
+        #     self.nose_pos = self.find_nose_position(
+        #         chan=self.ref_channel,
+        #     )
 
         # start with scrollbar set to in-focus slice
-        self.y_scrollbar.set(self.in_focus_slice)
-        self.set_axis(self.in_focus_slice, axis=AXIS_MAPPING[1])
+        # self.y_scrollbar.set(# self.in_focus_slice)
+        # self.set_axis(# self.in_focus_slice, axis=AXIS_MAPPING[1])
 
         # first draw
         self.draw_fish()
@@ -485,7 +497,7 @@ class VastInterfaceController(GUIController):
 
         # blit onto frame
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
-        self.fish_widget.canvas.flush_events()        
+        # self.fish_widget.canvas.flush_events()        
 
         # update text
         self.update_text()
@@ -500,16 +512,20 @@ class VastInterfaceController(GUIController):
 
     def on_click(self, event):
         if event.button == 1:
-            if self.setting_nose_pos:
-                self.nose_pos = self.current_position[AXIS_MAPPING[0]]
-                self.setting_nose_pos = False
-            elif self.setting_focus_pos:
-                self.m_focus_position = self.current_position[AXIS_MAPPING[2]]
-                self.setting_focus_pos = False
-            else:
-                # in pixels...
-                new_position = self.get_relative_position()
-                self.annotated_positions += [new_position]
+            self.cursor_pix = deepcopy(self.curr_abs_pos_pix)
+
+            print(self.cursor_pix)
+
+            # if self.setting_nose_pos:
+            #     self.nose_pos = self.curr_abs_pos_pix[AXIS_MAPPING[0]]
+            #     self.setting_nose_pos = False
+            # elif self.setting_focus_pos:
+            #     self.m_focus_position = self.curr_abs_pos_pix[AXIS_MAPPING[2]]
+            #     self.setting_focus_pos = False
+            # else:
+            #     # in pixels...
+            #     new_position = self.get_relative_position()
+            #     self.annotated_positions += [new_position]
         elif event.button == 3:
             # remove last
             try:
@@ -524,7 +540,7 @@ class VastInterfaceController(GUIController):
         if self.annotated_positions:
 
             # build signs vector
-            signs = vector(self.stage_axes, 1.)
+            signs = vector(self.stage_axes, val=1.)
             for ax, var in self.do_flip.items():
                 signs[ax] = 2.*float(var.get()) - 1.
 
@@ -590,16 +606,16 @@ class VastInterfaceController(GUIController):
         if axis == 'chan':
             self.curr_channel_idx = value
         else:
-            self.current_position[axis] = value
+            self.curr_abs_pos_pix[axis] = value
 
     def get_axis(self, axis):
         if axis == 'chan':
             return self.curr_channel_idx
         else:
-            return self.current_position[axis]
+            return self.curr_abs_pos_pix[axis]
 
     def get_relative_position(self):
-        return self.current_position - self.global_pixel_origin
+        return self.curr_abs_pos_pix - self.global_pixel_origin
 
     def draw_fish(self):
         # clear the plot
@@ -608,8 +624,8 @@ class VastInterfaceController(GUIController):
 
         # index the image to display
         chan = self.channel_names[self.curr_channel_idx]
-        v_idx = int(self.current_position['theta'])
-        y_idx = int(self.current_position[AXIS_MAPPING[1]])
+        v_idx = int(self.curr_abs_pos_pix['theta'])
+        y_idx = int(self.curr_abs_pos_pix[AXIS_MAPPING[1]])
 
         do_projection = self.do_projection.get()
         do_color = self.do_color.get()
@@ -679,7 +695,7 @@ class VastInterfaceController(GUIController):
 
         # title
         ax.set_title(
-            self.view_names[int(self.current_position['theta'])]
+            self.view_names[int(self.curr_abs_pos_pix['theta'])]
         )
 
         # ORIGIN X: draw x-origin
@@ -714,6 +730,12 @@ class VastInterfaceController(GUIController):
             color='b',
             ls='--'
         )
+
+        # draw cursor
+        if  self.cursor_pix is not None:
+            x = self.cursor_pix['x']
+            y = self.cursor_pix['m']
+            ax.scatter(x, y, s=50, marker='+', color=(0.0, 0.7, 0.2))
 
         # draw annotations
         for i, pos in enumerate(self.annotated_positions):
@@ -751,94 +773,6 @@ class VastInterfaceController(GUIController):
 
         self.update_text()
 
-    def manual_find_focus_position(self):
-        if not self.setting_focus_pos:
-            self.setting_focus_pos = True
-
-    def manual_find_nose_position(self):
-        if not self.setting_nose_pos:
-            self.setting_nose_pos = True
-
-    def find_nose_position(self, chan="", view=0, window=5):
-
-        # do this nicer later...
-        cap_path = r"C:\Vast\dcimg_files\emptyCapillary.bmp"
-        # cap_path = r"Z:\bioinformatics\Danuser_lab\Fiolka\LabMembers\Conor\VAST\Dagan_ExtraVas_Tc32_0dpi\VAST\empty_cap000_01_YStack\_4.tiff"
-        cap_im = cv2.imread(cap_path)[:,:,0]
-        print(cap_im.min(), cap_im.max())
-        cap_im = np.flip(1. - (cap_im/255), axis=0)
-
-        ax = self.fish_widget.ax
-
-        # im = self.projections[chan][view]
-        im = self.images[chan][view][3]
-        
-        print(im.min(), im.max())
-
-        # scale to prevent buffer overflow
-        im = 1. - (im / 65535) # uint16
-
-        # divide out cap
-        im = im / (cap_im + 1/255)
-
-        ax.imshow(im, cmap='gray')
-
-        print(im.min(), im.max())
-
-        # if self.cap_image:
-        #   im = im / (255 - self.cap_image + 1)
-
-        # project
-        p = im.sum(axis=0)
-        
-        # bg-sub
-        p -= np.mean(p)
-        p[p < 0.] = 0.
-
-        # probability density
-        p = p / p.sum()
-        x = np.arange(0, len(p))
-
-        # skewness to determine direction
-        x_mean = np.sum(x * p)
-        x_med  = np.where(np.cumsum(p) >= 0.5)[0][0]
-
-        sign = 2*int(x_med > x_mean) - 1
-
-        from scipy.signal import medfilt
-        p = np.array(
-            medfilt(p, kernel_size=15) > 0,
-            dtype=float
-        )
-
-        ax.plot(x, 100 * (p / p.max()))
-
-        # nose detector
-        tracker = 0
-        trace = []
-
-        for i in range(x[-1] - window):
-            s = p[::sign][i:(i+window)]
-            idx = s.argmin()
-
-            if idx == window-1:
-                tracker += 1
-            else:
-                tracker = 0
-        
-            trace.append(tracker)
-
-        trace = trace[::sign]
-
-        ax.plot(trace)
-
-        nose_pos = np.argmax(trace)
-
-        ax.vlines([nose_pos, x_mean, x_med], ymin=0, ymax=len(im), linestyles='--', color=['g', 'r', 'b'])
-
-        # return the nose position along x: pixels
-        return nose_pos
-
     @staticmethod
     def load_stack(dir, chan):
         """
@@ -871,29 +805,10 @@ class VastInterfaceController(GUIController):
         # reload the fish after updating
         self.load_next_fish(self.well)
 
-    def load_vexp(self):
-        vexp_file = filedialog.askopenfile(master=self.view, defaultextension="vexp", title="Load VAST experiment file...")
-        self.vexp_path = vexp_file.name
-        self.update_experiment_values()
-
-    def load_job(self):
-        job_file = filedialog.askopenfile(master=self.view, defaultextension="job", title="Load VAST JOB file...")
-        self.job_path = job_file.name
-        self.update_experiment_values()
-
-    def parse_vexp(self):
-        tree = ET.parse(self.vexp_path)
-        return parse_xml(tree.getroot())        
-
-    @staticmethod
-    def parse_xml(path: str):
-        tree = ET.parse(path)
-        return parse_xml(tree.getroot())
-
-    def parse_well(self, well=None):
-        if not well:
-            wells = glob(os.path.join(self.working_dir, "Well_*"))
-            well = wells[-1] # most recent
+    def parse_well(self, well):
+        # if not well:
+        #     wells = glob(os.path.join(self.working_dir, "Well_*"))
+        #     well = wells[-1] # most recent
 
         walk = os.walk(well)
 

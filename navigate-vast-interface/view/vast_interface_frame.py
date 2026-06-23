@@ -66,11 +66,23 @@ class VastInterfaceFrame(ttk.Frame):
 
         self.fish_widget = FishWidget(self.fish_frame)
         self.fish_widget.canvas.get_tk_widget().pack(side=tk.LEFT)
+        self.inputs['fish_widget'] = self.fish_widget
+        
+        self.control_notebook = ttk.Notebook(self.fish_frame)
+        self.control_notebook.pack(side=tk.RIGHT, fill=tk.Y, expand=True)
+
+        # | ----------- AXES TAB ----------- |
+
+        axes_tab = ttk.Frame(self.control_notebook)
+        self.control_notebook.add(axes_tab, text="AXES")
+
+        scroll_frame = ttk.Frame(axes_tab)
+        scroll_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # Scrollbars
         for scrollable in ["Y", "Theta", "Chan"]:
             scrollbar = tk.Scale(
-                self.fish_frame, 
+                scroll_frame, 
                 orient=tk.VERTICAL,
                 tickinterval=1,
                 label=scrollable
@@ -82,29 +94,8 @@ class VastInterfaceFrame(ttk.Frame):
                 )
             self.inputs[f'{scrollable.lower()}_scrollbar'] = scrollbar
 
-        self.inputs['fish_widget'] = self.fish_widget
-
-        load_frame = ttk.Frame(self)
-
-        vexp_path_button = ttk.Button(load_frame, text="Load VEXP")
-        vexp_path_button.grid(row=0, column=0, sticky=tk.NW)
-        self.buttons['vexp_path'] = vexp_path_button
-
-        self.variables['vexp_path'] = tk.StringVar()
-        vexp_path_label = ttk.Label(load_frame, textvariable=self.variables['vexp_path'])
-        vexp_path_label.grid(row=0, column=1, sticky=tk.NW)
-
-        job_path_button = ttk.Button(load_frame, text="Load JOB")
-        job_path_button.grid(row=1, column=0, sticky=tk.NW)
-        self.buttons['job_path'] = job_path_button
-
-        self.variables['job_path'] = tk.StringVar()
-        job_path_label = ttk.Label(load_frame, textvariable=self.variables['job_path'])
-        job_path_label.grid(row=1, column=1, sticky=tk.NW)
-
-        load_frame.pack()
-
-        axis_tools_frame = ttk.Frame(self)
+        flip_frame = ttk.Frame(axes_tab)
+        flip_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
 
         # flip checks
         flip_var = {
@@ -113,17 +104,129 @@ class VastInterfaceFrame(ttk.Frame):
             "z": tk.BooleanVar()
         }
         flip_check = {
-            "x": ttk.Checkbutton(axis_tools_frame, variable=flip_var["x"]),
-            "y": ttk.Checkbutton(axis_tools_frame, variable=flip_var["y"]),
-            "z": ttk.Checkbutton(axis_tools_frame, variable=flip_var["z"]),
+            "x": ttk.Checkbutton(flip_frame, variable=flip_var["x"]),
+            "y": ttk.Checkbutton(flip_frame, variable=flip_var["y"]),
+            "z": ttk.Checkbutton(flip_frame, variable=flip_var["z"]),
         }
         self.inputs["flip"] = {
             "button": flip_check,
             "variable": flip_var
         }
-        for i, axis in enumerate(flip_check):
-            flip_check[axis].grid(row=0, column=2*i)
-            ttk.Label(axis_tools_frame, text=f"Flip {axis.upper()}").grid(row=0, column=2*i+1)
+        for axis in flip_check:
+            flip_check[axis].pack(side=tk.LEFT)
+            ttk.Label(flip_frame, text=f"Flip {axis.upper()}").pack(side=tk.LEFT)
+
+        # | ----------- CALIBRATION TAB ----------- |
+
+        calib_tab = ttk.Frame(self.control_notebook)
+        self.control_notebook.add(calib_tab, text="CALIBRATION")
+
+        pixel_size_frame = ttk.Frame(calib_tab, borderwidth=2, relief='ridge')
+        pixel_size_frame.pack(side=tk.TOP, fill=tk.X, expand=False)
+
+        loc_frames = {}
+
+        loc_outer_frame = ttk.Frame(pixel_size_frame, border=2)
+        loc_outer_frame.pack(side=tk.TOP)
+
+        for i in range(2):        
+            loc_frames[i] = ttk.Frame(loc_outer_frame, borderwidth=2, relief='sunken')
+            loc_frames[i].pack(side=tk.LEFT)
+
+            for ax in ['x', 'm']:
+                for u in ['um', 'pix']:
+                    self.variables[f"{ax}{i}_{u}"] = tk.DoubleVar(value=0.0)
+                    self.inputs[f"{ax}{i}_{u}"] = LabelInput(
+                        loc_frames[i],
+                        label=f"{ax}{i} [{u}]:\t",
+                        label_pos="left",
+                        input_args={"width": 8},
+                        input_var=self.variables[f"{ax}{i}_{u}"]
+                    )
+                    self.inputs[f"{ax}{i}_{u}"].pack(side=tk.TOP)
+
+                self.buttons[f"set_{ax}{i}"] = ttk.Button(loc_frames[i], text="SET")
+                self.buttons[f"set_{ax}{i}"].pack(side=tk.TOP, fill=tk.X, expand=True)
+
+        # pixel size
+        self.variables["dx_um_pix"] = tk.StringVar(value="1.000")
+        self.variables["dm_um_pix"] = tk.StringVar(value="1.000")
+
+        dx_dm_frame = tk.Frame(pixel_size_frame)
+        dx_dm_frame.pack(side=tk.BOTTOM)
+        ttk.Label(dx_dm_frame, text="dx [um/pix]:\t").pack(side=tk.LEFT)
+        ttk.Label(dx_dm_frame, textvariable=self.variables["dx_um_pix"]).pack(side=tk.LEFT)
+        ttk.Label(dx_dm_frame, text="dm [um/pix]:\t").pack(side=tk.LEFT)
+        ttk.Label(dx_dm_frame, textvariable=self.variables["dm_um_pix"]).pack(side=tk.LEFT)
+
+        # y-step calibration            
+        y_step_frame = ttk.Frame(calib_tab, borderwidth=2, relief='ridge')
+        y_step_frame.pack(side=tk.TOP, fill=tk.X, expand=False)
+
+        self.variables["dy_um_step"] = tk.DoubleVar(value=1.0)
+        self.inputs["dy_um_step"] = LabelInput(
+            y_step_frame,
+            label=f"dy [um/step]:\t",
+            label_pos="left",
+            input_args={"width": 8},
+            input_var=self.variables["dy_um_step"]
+        )
+        self.inputs["dy_um_step"].pack(side=tk.LEFT)  
+
+        self.variables["y0_step"] = tk.IntVar(value=0)
+        self.inputs["y0_step"] = LabelInput(
+            y_step_frame,
+            label=f"y0 [step]:\t",
+            label_pos="left",
+            input_args={"width": 8},
+            input_var=self.variables["y0_step"]
+        )
+        self.inputs["y0_step"].pack(side=tk.LEFT)           
+
+        self.buttons["set_y0"] = tk.Button(y_step_frame, text="SET")
+        self.buttons["set_y0"].pack(side=tk.LEFT, expand=True)
+
+        # theta-rotation calibration            
+        theta_step_frame = ttk.Frame(calib_tab, borderwidth=2, relief='ridge')
+        theta_step_frame.pack(side=tk.TOP, fill=tk.X, expand=False)
+
+        self.variables["dtheta_deg_step"] = tk.DoubleVar(value=1.0)
+        self.inputs["dtheta_deg_step"] = LabelInput(
+            theta_step_frame,
+            label=f"d\u03B8 [deg/step]:\t",
+            label_pos="left",
+            input_args={"width": 8},
+            input_var=self.variables["dtheta_deg_step"]
+        )
+        self.inputs["dtheta_deg_step"].pack(side=tk.LEFT)  
+
+        self.variables["theta0_step"] = tk.IntVar(value=0)
+        self.inputs["theta0_step"] = LabelInput(
+            theta_step_frame,
+            label=f"\u03B80 [step]:\t",
+            label_pos="left",
+            input_args={"width": 8},
+            input_var=self.variables["theta0_step"]
+        )
+        self.inputs["theta0_step"].pack(side=tk.LEFT)           
+
+        self.buttons["set_theta0"] = tk.Button(theta_step_frame, text="SET")
+        self.buttons["set_theta0"].pack(side=tk.LEFT, expand=True)
+
+        # self.inputs["x0_pix"] = LabelInput(
+        #     head_loc_frame,
+        #     label="x0 [pix]:",
+        #     label_pos="left",
+        #     input_args={"width": 10}
+        # )
+        # self.inputs["x0_pix"].pack(side=tk.TOP)
+
+        # ttk.Label(pixel_size_frame, text="x0 [um]: ").pack(side=tk.LEFT)
+        # self.variables["x_um"] = tk.StringVar(value="0.0")
+        # ttk.Label(pixel_size_frame, textvariable=self.variables["x_um"]).pack(side=tk.LEFT)
+
+
+        axis_tools_frame = ttk.Frame(self)
 
         # append nose
         append_nose_var = tk.BooleanVar()
