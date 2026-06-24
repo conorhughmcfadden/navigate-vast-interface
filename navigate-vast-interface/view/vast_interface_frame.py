@@ -27,6 +27,13 @@ class FishWidget:
         self.inset_ax.set_xticks([])
         self.inset_ax.set_yticks([])
         self.inset_ax.patch.set_alpha(0.85)
+        
+        # TODO: Maybe add spines later... looks kind of clunky
+        # for spine in self.inset_ax.spines.values():
+        #     spine.set_color('red')
+        #     spine.set_linewidth(2.0)
+        #     spine.set_visible(True)
+        
         self.inset_im = self.inset_ax.imshow(
             np.zeros((16, 16)),
             cmap='gray',
@@ -34,8 +41,31 @@ class FishWidget:
             origin='upper'
         )
 
+        # initially hide axes
+        self.inset_ax.set_visible(False)
+
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
         self.fig.tight_layout()
+
+    def set_inset_ax_position(self, pos_data: tuple[float]):
+
+        if any(ax == None for ax in pos_data):
+            return
+
+        display_pt = self.ax.transData.transform(pos_data)
+        fig_x, fig_y = self.fig.transFigure.inverted().transform(display_pt)
+
+        pos = self.inset_ax.get_position()
+        width  = pos.width
+        height = pos.height
+        left   = fig_x - width/2
+        bottom = fig_y - height/2
+
+        # clamp to visible
+        left = max(0, min(left, 1 - width))
+        bottom = max(0, min(bottom, 1 - height))
+
+        self.inset_ax.set_position([left, bottom, width, height])
 
 class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
@@ -71,7 +101,7 @@ class VastInterfaceFrame(ttk.Frame):
         self.variables['text'] = tk.StringVar()
         self.text_label = ttk.Label(self, 
                                     textvariable=self.variables['text'], 
-                                    font=("Arial", 16, "bold")
+                                    font=("Arial", 12, "bold")
                                     )
         self.text_label.pack()
 

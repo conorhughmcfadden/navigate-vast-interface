@@ -482,6 +482,10 @@ class VastInterfaceController(GUIController):
         return peaks
 
     def move_crosshair(self, event):
+        # Only process events over the main axis
+        if event.inaxes != self.fish_widget.ax:
+            return
+
         # clear crosshairs
         if self.background is not None:
             self.fish_widget.canvas.restore_region(self.background)
@@ -506,6 +510,9 @@ class VastInterfaceController(GUIController):
 
         # draw ROI inset if we have a current image and valid cursor location
         if self.current_display_image is not None and event.xdata is not None and event.ydata is not None:
+            if not self.fish_widget.inset_ax.get_visible():
+                self.fish_widget.inset_ax.set_visible(True)
+
             if self.inset_background is not None:
                 self.fish_widget.canvas.restore_region(self.inset_background)
 
@@ -524,6 +531,12 @@ class VastInterfaceController(GUIController):
                 self.fish_widget.inset_im.set_clim(np.nanmin(roi), np.nanmax(roi))
             self.fish_widget.inset_ax.draw_artist(self.fish_widget.inset_im)
             self.fish_widget.canvas.blit(self.fish_widget.inset_ax.bbox)
+
+            # move inset_ax to crosshair position
+            self.fish_widget.set_inset_ax_position((cx, cy))
+        else:
+            if self.fish_widget.inset_ax.get_visible():
+                self.fish_widget.inset_ax.set_visible(False)
 
         # blit onto frame
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
@@ -674,10 +687,18 @@ class VastInterfaceController(GUIController):
         relative_position_um = self.get_relative_position() * self.units
         
         tstr =  f"x: {relative_position_um['x']:.2f} um\t" \
-                f"y: {relative_position_um['y']:.2f} um\t" \
                 f"m: {relative_position_um['m']:.2f} um\t" \
-                f"theta: {relative_position_um['theta']:.2f} deg\t" \
+                f"y: {relative_position_um['y']:.2f} um\t" \
+                f"\u03B8: {relative_position_um['theta']:.2f} deg\t" \
                 f"channel: {self.channel_names[self.curr_channel_idx]}"
+        
+        pix = self.curr_abs_pos_pix
+
+        tstr += "\n" \
+                f"x: {pix['x']:.2f} pix\t" \
+                f"m: {pix['m']:.2f} pix\t" \
+                f"y: {int(pix['y'])} steps\t" \
+                f"\u03B8: {int(pix['theta'])} steps\t"
         
         self.text_var.set(tstr)
 
