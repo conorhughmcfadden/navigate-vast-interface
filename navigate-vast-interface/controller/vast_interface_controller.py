@@ -295,6 +295,8 @@ class VastInterfaceController(GUIController):
         self.setting_nose_pos = False
         self.setting_focus_pos = False
         self.background = None
+        self.inset_background = None
+        self.current_display_image = None
         self.ref_channel = None
 
         # projection stuff
@@ -502,6 +504,34 @@ class VastInterfaceController(GUIController):
             z_line.set_data([0, self.w], [z_]*2)
             self.fish_widget.ax.draw_artist(z_line)        
 
+        # draw ROI inset if we have a current image and valid cursor location
+        if self.current_display_image is not None and event.xdata is not None and event.ydata is not None:
+            if self.inset_background is not None:
+                self.fish_widget.canvas.restore_region(self.inset_background)
+
+            cx = int(np.clip(round(event.xdata), 0, self.w - 1))
+            cy = int(np.clip(round(event.ydata), 0, self.l - 1))
+            roi_half = 16
+            xmin, xmax = max(0, cx - roi_half), min(self.w, cx + roi_half + 1)
+            ymin, ymax = max(0, cy - roi_half), min(self.l, cy + roi_half + 1)
+            roi = self.current_display_image[ymin:ymax, xmin:xmax]
+
+            if roi.ndim == 2:
+                padded = np.zeros((2*roi_half + 1, 2*roi_half + 1), dtype=roi.dtype)
+            else:
+                padded = np.zeros((2*roi_half + 1, 2*roi_half + 1, roi.shape[2]), dtype=roi.dtype)
+
+            yoff = (padded.shape[0] - roi.shape[0]) // 2
+            xoff = (padded.shape[1] - roi.shape[1]) // 2
+            padded[yoff:yoff + roi.shape[0], xoff:xoff + roi.shape[1], ...] = roi
+            roi = padded
+
+            self.fish_widget.inset_im.set_data(roi)
+            if roi.ndim == 2:
+                self.fish_widget.inset_im.set_clim(np.nanmin(roi), np.nanmax(roi))
+            self.fish_widget.inset_ax.draw_artist(self.fish_widget.inset_im)
+            self.fish_widget.canvas.blit(self.fish_widget.inset_ax.bbox)
+
         # blit onto frame
         self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
 
@@ -696,6 +726,9 @@ class VastInterfaceController(GUIController):
         else:
             image_to_display = self.images[chan][v_idx][y_idx]
 
+        # store the current image used by the display for ROI extraction
+        self.current_display_image = image_to_display
+
         # TODO: Very hacky and unoptimized...
         # gamma
         gm = [
@@ -730,10 +763,13 @@ class VastInterfaceController(GUIController):
             im_rgb[1] = 0.3*gamma(0) + 0.7*gamma(1)
             im_rgb[2] = 0.3*gamma(0)
 
-            ax.imshow(np.moveaxis(im_rgb, 0, -1))
+            disp_image = np.moveaxis(im_rgb, 0, -1)
+            self.current_display_image = disp_image
+            ax.imshow(disp_image)
         else:
-            image_to_display = np.power(image_to_display, gm[self.curr_channel_idx])
-            ax.imshow(image_to_display, cmap='gray')
+            disp_image = np.power(image_to_display, gm[self.curr_channel_idx])
+            self.current_display_image = disp_image
+            ax.imshow(disp_image, cmap='gray')
         
 
         # SET UP AXES:
@@ -831,6 +867,9 @@ class VastInterfaceController(GUIController):
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
             ax.bbox
+        )
+        self.inset_background = self.fish_widget.canvas.copy_from_bbox(
+            self.fish_widget.inset_ax.bbox
         )
 
         self.update_text()

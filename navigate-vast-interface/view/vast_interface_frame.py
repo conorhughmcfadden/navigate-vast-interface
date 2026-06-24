@@ -7,7 +7,6 @@ import numpy as np
 #Third-party Imports
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 #Local Imports
 from navigate.view.custom_widgets.hover import Hover, HoverButton
@@ -22,30 +21,21 @@ class FishWidget:
         self.fig = Figure(figsize=(12,4))
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
-
-        self.inset_ax = inset_axes(
-            self.ax,
-            width="18%",
-            height="18%",
-            loc='lower left',
-            bbox_to_anchor=(0.02, 0.02, 1, 1),
-            bbox_transform=self.ax.transAxes,
-            borderpad=0
-        )
+        
+        self.inset_ax = self.fig.add_axes([-0.075, 0.18, 0.40, 0.40])
+        self.inset_ax.set_aspect('equal')
+        self.inset_ax.set_xticks([])
+        self.inset_ax.set_yticks([])
+        self.inset_ax.patch.set_alpha(0.85)
         self.inset_im = self.inset_ax.imshow(
             np.zeros((16, 16)),
             cmap='gray',
             interpolation='nearest',
             origin='upper'
         )
-        self.inset_ax.set_xticks([])
-        self.inset_ax.set_yticks([])
-        self.inset_ax.patch.set_alpha(0.85)
 
-        self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
-
-
+        self.fig.tight_layout()
 
 class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
