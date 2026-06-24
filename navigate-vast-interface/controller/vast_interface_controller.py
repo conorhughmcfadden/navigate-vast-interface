@@ -511,20 +511,13 @@ class VastInterfaceController(GUIController):
 
             cx = int(np.clip(round(event.xdata), 0, self.w - 1))
             cy = int(np.clip(round(event.ydata), 0, self.l - 1))
-            roi_half = 16
-            xmin, xmax = max(0, cx - roi_half), min(self.w, cx + roi_half + 1)
-            ymin, ymax = max(0, cy - roi_half), min(self.l, cy + roi_half + 1)
-            roi = self.current_display_image[ymin:ymax, xmin:xmax]
-
-            if roi.ndim == 2:
-                padded = np.zeros((2*roi_half + 1, 2*roi_half + 1), dtype=roi.dtype)
-            else:
-                padded = np.zeros((2*roi_half + 1, 2*roi_half + 1, roi.shape[2]), dtype=roi.dtype)
-
-            yoff = (padded.shape[0] - roi.shape[0]) // 2
-            xoff = (padded.shape[1] - roi.shape[1]) // 2
-            padded[yoff:yoff + roi.shape[0], xoff:xoff + roi.shape[1], ...] = roi
-            roi = padded
+            
+            roi = self.get_pixels_ROI(
+                self.current_display_image,
+                pos=(cx, cy),
+                dim=(self.l, self.w),
+                roi_half=32
+            )
 
             self.fish_widget.inset_im.set_data(roi)
             if roi.ndim == 2:
@@ -537,6 +530,28 @@ class VastInterfaceController(GUIController):
 
         # update text
         self.update_text()
+
+    @staticmethod
+    def get_pixels_ROI(im: np.ndarray, pos: tuple[int], dim: tuple[int], roi_half: int=16):
+        cx, cy = pos
+        l, w   = dim
+
+        xmin, xmax = max(0, cx - roi_half), min(w, cx + roi_half + 1)
+        ymin, ymax = max(0, cy - roi_half), min(l, cy + roi_half + 1)
+        
+        # read ROI from im
+        roi = im[ymin:ymax, xmin:xmax]
+
+        if roi.ndim == 2:
+            padded = np.zeros((2*roi_half + 1, 2*roi_half + 1), dtype=roi.dtype)
+        else:
+            padded = np.zeros((2*roi_half + 1, 2*roi_half + 1, roi.shape[2]), dtype=roi.dtype)
+
+        yoff = (padded.shape[0] - roi.shape[0]) // 2
+        xoff = (padded.shape[1] - roi.shape[1]) // 2
+        padded[yoff:yoff + roi.shape[0], xoff:xoff + roi.shape[1], ...] = roi
+        
+        return padded[::-1]
 
     @staticmethod
     def format_vectors_to_table(vector_list : list[vector]):
