@@ -296,6 +296,7 @@ class VastInterfaceController(GUIController):
         self.setting_focus_pos = False
         self.background = None
         self.current_display_image = None
+        self._cursor_in_ax = False
         self.ref_channel = None
 
         # projection stuff
@@ -351,10 +352,10 @@ class VastInterfaceController(GUIController):
             'button_press_event',
             self.on_click
         )
-        
+
         self.fish_widget.fig.canvas.mpl_connect(
             'scroll_event',
-            lambda event: self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
+            lambda event: self._canvas_scroll_event_wrapper(event)
         )
 
         # query the current absolute stage position and store it
@@ -368,6 +369,10 @@ class VastInterfaceController(GUIController):
 
         # go ahead and load the first fish
         # self.load_next_fish()
+
+    def _canvas_scroll_event_wrapper(self, event):
+        self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
+        self.move_crosshair()
 
     def load_specific_well(self):
         well = filedialog.askdirectory(title="Choose the Well directory:")
@@ -485,53 +490,66 @@ class VastInterfaceController(GUIController):
 
         return peaks
 
-    def _on_figure_leave(self, _event):
+    def _on_figure_leave(self, _):
         if self.fish_widget.inset_ax.get_visible():
             self.fish_widget.inset_ax.set_visible(False)
             if self.background is not None:
                 self.fish_widget.canvas.restore_region(self.background)
                 self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
 
-    def move_crosshair(self, event):
+    def move_crosshair(self, event=None):
         ax = self.fish_widget.ax
 
-        # Check cursor position in display space rather than via event.inaxes.
-        # When inset_ax overlaps the cursor, matplotlib reports inset_ax as
-        # event.inaxes and gives inset data coordinates — bypassing both with
-        # a direct bbox containment test and a manual transform inversion.
-        if not ax.bbox.contains(event.x, event.y):
-            if self.fish_widget.inset_ax.get_visible():
-                self.fish_widget.inset_ax.set_visible(False)
-                if self.background is not None:
-                    self.fish_widget.canvas.restore_region(self.background)
-                    self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
-            return
+        if event is not None:
+            # Use display-space containment so inset_ax can't steal focus
+            if not ax.bbox.contains(event.x, event.y):
+                self._cursor_in_ax = False
+                if self.fish_widget.inset_ax.get_visible():
+                    self.fish_widget.inset_ax.set_visible(False)
+                    if self.background is not None:
+                        self.fish_widget.canvas.restore_region(self.background)
+                        self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
+                return
+
+            self._cursor_in_ax = True
+            xdata, ydata = ax.transData.inverted().transform((event.x, event.y))
+            self.set_axis(xdata, AXIS_MAPPING[0])
+            self.set_axis(ydata, AXIS_MAPPING[2])
 
         if self.background is None:
             return
 
-        xdata, ydata = ax.transData.inverted().transform((event.x, event.y))
-
         self.fish_widget.canvas.restore_region(self.background)
 
-        if not self.setting_focus_pos:
-            self.set_axis(xdata, AXIS_MAPPING[0])
-            x_line = self.fish_widget.lines[0]
-            x_line.set_data([xdata]*2, [0, self.l])
-            ax.draw_artist(x_line)
+        # Retrieve x, y: still valid when called with event=None after a scroll
+        x = self.curr_abs_pos_pix[AXIS_MAPPING[0]]
+        y = self.curr_abs_pos_pix[AXIS_MAPPING[2]]
 
-        if not self.setting_nose_pos:
-            self.set_axis(ydata, AXIS_MAPPING[2])
-            z_line = self.fish_widget.lines[1]
-            z_line.set_data([0, self.w], [ydata]*2)
-            ax.draw_artist(z_line)
+        x_line = self.fish_widget.lines[0]
+        x_line.set_data([x]*2, [0, self.l])
+        ax.draw_artist(x_line)
+
+        m_line = self.fish_widget.lines[1]
+        m_line.set_data([0, self.w], [y]*2)
+        ax.draw_artist(m_line)
+
+        # Update ROI if needed
+        self._update_ROI((x, y))
+
+        self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
+        self.update_text()
+
+    def _update_ROI(self, pos: tuple[float]):
+        # pixel position
+        x, y = pos
 
         if self.current_display_image is not None:
+            # Show the ROI if needed
             if not self.fish_widget.inset_ax.get_visible():
                 self.fish_widget.inset_ax.set_visible(True)
 
-            cx = int(np.clip(round(xdata), 0, self.w - 1))
-            cy = int(np.clip(round(ydata), 0, self.l - 1))
+            cx = int(np.clip(round(x), 0, self.w - 1))
+            cy = int(np.clip(round(y), 0, self.l - 1))
 
             roi = self.get_pixels_ROI(
                 self.current_display_image,
@@ -547,11 +565,9 @@ class VastInterfaceController(GUIController):
             self.fish_widget.set_inset_ax_position((cx, cy))
             self.fish_widget.inset_ax.draw_artist(self.fish_widget.inset_im)
         else:
+            # Hide the ROI if there's no image
             if self.fish_widget.inset_ax.get_visible():
-                self.fish_widget.inset_ax.set_visible(False)
-
-        self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
-        self.update_text()
+                self.fish_widget.inset_ax.set_visible(False)        
 
     @staticmethod
     def get_pixels_ROI(im: np.ndarray, pos: tuple[int], dim: tuple[int], roi_half: int=16):
@@ -916,7 +932,12 @@ class VastInterfaceController(GUIController):
             self.fish_widget.fig.bbox
         )
 
-        self.update_text()
+        # Re-render crosshair/ROI if the cursor was inside the axes when the
+        # slice changed (e.g. mousewheel scroll), so they don't disappear
+        if self._cursor_in_ax:
+            self.move_crosshair()
+        else:
+            self.update_text()
 
     @staticmethod
     def load_stack(dir, chan):
