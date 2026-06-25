@@ -267,6 +267,7 @@ class VastInterfaceController(GUIController):
         self.background = None
         self.current_display_image = None
         self._cursor_in_ax = False
+        self._shift_held = False
         self.ref_channel = None
 
         # projection stuff
@@ -318,6 +319,22 @@ class VastInterfaceController(GUIController):
         self.fish_widget.fig.canvas.mpl_connect(
             'figure_leave_event',
             self._on_figure_leave
+        )
+
+        self.fish_widget.fig.canvas.mpl_connect(
+            'key_press_event',
+            self._on_key_press
+        )
+
+        self.fish_widget.fig.canvas.mpl_connect(
+            'key_release_event',
+            self._on_key_release
+        )
+
+        # Give canvas keyboard focus on hover so key events fire without a click
+        self.fish_widget.canvas.get_tk_widget().bind(
+            '<Enter>',
+            lambda e: self.fish_widget.canvas.get_tk_widget().focus_set()
         )
 
         self.fish_widget.fig.canvas.mpl_connect(
@@ -456,6 +473,16 @@ class VastInterfaceController(GUIController):
 
         return peaks
 
+    def _on_key_press(self, event):
+        if event.key == 'shift':
+            self._shift_held = True
+            self.move_crosshair()
+
+    def _on_key_release(self, event):
+        if event.key == 'shift':
+            self._shift_held = False
+            self.move_crosshair()
+
     def _on_figure_leave(self, _):
         if self.fish_widget.inset_ax.get_visible():
             self.fish_widget.inset_ax.set_visible(False)
@@ -509,7 +536,7 @@ class VastInterfaceController(GUIController):
         # pixel position
         x, y = pos
 
-        if self.current_display_image is not None:
+        if self.current_display_image is not None and self._shift_held:
             # Show the ROI if needed
             if not self.fish_widget.inset_ax.get_visible():
                 self.fish_widget.inset_ax.set_visible(True)
