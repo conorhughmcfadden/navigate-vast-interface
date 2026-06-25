@@ -295,7 +295,6 @@ class VastInterfaceController(GUIController):
         self.setting_nose_pos = False
         self.setting_focus_pos = False
         self.background = None
-        self.inset_background = None
         self.current_display_image = None
         self.ref_channel = None
 
@@ -341,6 +340,11 @@ class VastInterfaceController(GUIController):
         self.fish_widget.fig.canvas.mpl_connect(
             'motion_notify_event',
             self.move_crosshair
+        )
+
+        self.fish_widget.fig.canvas.mpl_connect(
+            'figure_leave_event',
+            self._on_figure_leave
         )
 
         self.fish_widget.fig.canvas.mpl_connect(
@@ -481,44 +485,54 @@ class VastInterfaceController(GUIController):
 
         return peaks
 
+    def _on_figure_leave(self, _event):
+        if self.fish_widget.inset_ax.get_visible():
+            self.fish_widget.inset_ax.set_visible(False)
+            if self.background is not None:
+                self.fish_widget.canvas.restore_region(self.background)
+                self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
+
     def move_crosshair(self, event):
-        # Only process events over the main axis
-        if event.inaxes != self.fish_widget.ax:
+        ax = self.fish_widget.ax
+
+        # Check cursor position in display space rather than via event.inaxes.
+        # When inset_ax overlaps the cursor, matplotlib reports inset_ax as
+        # event.inaxes and gives inset data coordinates — bypassing both with
+        # a direct bbox containment test and a manual transform inversion.
+        if not ax.bbox.contains(event.x, event.y):
+            if self.fish_widget.inset_ax.get_visible():
+                self.fish_widget.inset_ax.set_visible(False)
+                if self.background is not None:
+                    self.fish_widget.canvas.restore_region(self.background)
+                    self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
             return
 
-        # clear crosshairs
-        if self.background is not None:
-            self.fish_widget.canvas.restore_region(self.background)
-        else:
+        if self.background is None:
             return
-        
-        # x-axis
+
+        xdata, ydata = ax.transData.inverted().transform((event.x, event.y))
+
+        self.fish_widget.canvas.restore_region(self.background)
+
         if not self.setting_focus_pos:
-            x_ = event.xdata
-            self.set_axis(x_, AXIS_MAPPING[0])
+            self.set_axis(xdata, AXIS_MAPPING[0])
             x_line = self.fish_widget.lines[0]
-            x_line.set_data([x_]*2, [0, self.l])
-            self.fish_widget.ax.draw_artist(x_line)
+            x_line.set_data([xdata]*2, [0, self.l])
+            ax.draw_artist(x_line)
 
-        # z-axis
         if not self.setting_nose_pos:
-            z_ = event.ydata
-            self.set_axis(z_, AXIS_MAPPING[2])
+            self.set_axis(ydata, AXIS_MAPPING[2])
             z_line = self.fish_widget.lines[1]
-            z_line.set_data([0, self.w], [z_]*2)
-            self.fish_widget.ax.draw_artist(z_line)        
+            z_line.set_data([0, self.w], [ydata]*2)
+            ax.draw_artist(z_line)
 
-        # draw ROI inset if we have a current image and valid cursor location
-        if self.current_display_image is not None and event.xdata is not None and event.ydata is not None:
+        if self.current_display_image is not None:
             if not self.fish_widget.inset_ax.get_visible():
                 self.fish_widget.inset_ax.set_visible(True)
 
-            if self.inset_background is not None:
-                self.fish_widget.canvas.restore_region(self.inset_background)
+            cx = int(np.clip(round(xdata), 0, self.w - 1))
+            cy = int(np.clip(round(ydata), 0, self.l - 1))
 
-            cx = int(np.clip(round(event.xdata), 0, self.w - 1))
-            cy = int(np.clip(round(event.ydata), 0, self.l - 1))
-            
             roi = self.get_pixels_ROI(
                 self.current_display_image,
                 pos=(cx, cy),
@@ -529,19 +543,14 @@ class VastInterfaceController(GUIController):
             self.fish_widget.inset_im.set_data(roi)
             if roi.ndim == 2:
                 self.fish_widget.inset_im.set_clim(np.nanmin(roi), np.nanmax(roi))
-            self.fish_widget.inset_ax.draw_artist(self.fish_widget.inset_im)
-            self.fish_widget.canvas.blit(self.fish_widget.inset_ax.bbox)
 
-            # move inset_ax to crosshair position
             self.fish_widget.set_inset_ax_position((cx, cy))
+            self.fish_widget.inset_ax.draw_artist(self.fish_widget.inset_im)
         else:
             if self.fish_widget.inset_ax.get_visible():
                 self.fish_widget.inset_ax.set_visible(False)
 
-        # blit onto frame
-        self.fish_widget.canvas.blit(self.fish_widget.ax.bbox)
-
-        # update text
+        self.fish_widget.canvas.blit(self.fish_widget.fig.bbox)
         self.update_text()
 
     @staticmethod
@@ -900,12 +909,11 @@ class VastInterfaceController(GUIController):
         ax.set_ylim(0, self.l)
 
         # FINISH: set up canvas
+        # Hide inset before capturing background so it is never baked into it
+        self.fish_widget.inset_ax.set_visible(False)
         self.fish_widget.canvas.draw()
         self.background = self.fish_widget.canvas.copy_from_bbox(
-            ax.bbox
-        )
-        self.inset_background = self.fish_widget.canvas.copy_from_bbox(
-            self.fish_widget.inset_ax.bbox
+            self.fish_widget.fig.bbox
         )
 
         self.update_text()
