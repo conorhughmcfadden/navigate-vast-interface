@@ -22,18 +22,14 @@ class FishWidget:
         self.ax = self.fig.add_subplot()
         self.lines = self.ax.plot([], [], 'r', [], [], 'r', linewidth=1.0)
         
+        self.fig.tight_layout()
+
         self.inset_ax = self.fig.add_axes([-0.075, 0.18, 0.40, 0.40])
         self.inset_ax.set_aspect('equal')
         self.inset_ax.set_xticks([])
         self.inset_ax.set_yticks([])
         self.inset_ax.patch.set_alpha(0.85)
-        
-        # TODO: Maybe add spines later... looks kind of clunky
-        # for spine in self.inset_ax.spines.values():
-        #     spine.set_color('red')
-        #     spine.set_linewidth(2.0)
-        #     spine.set_visible(True)
-        
+                
         self.inset_im = self.inset_ax.imshow(
             np.zeros((16, 16)),
             cmap='gray',
@@ -45,7 +41,6 @@ class FishWidget:
         self.inset_ax.set_visible(False)
 
         self.canvas = FigureCanvasTkAgg(figure=self.fig, master=master)
-        self.fig.tight_layout()
 
     def set_inset_ax_position(self, pos_data: tuple[float]):
 

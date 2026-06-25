@@ -11,19 +11,12 @@ import traceback
 
 # Third party imports
 from tifffile import tifffile
-from skimage.exposure import adjust_gamma
 from matplotlib.patches import Circle
 
 # Local application imports
 from navigate.controller.sub_controllers.gui import GUIController
 from navigate.controller.controller import Controller
-from navigate.tools.file_functions import load_yaml_file
-
-from navigate.tools.xml_tools import parse_xml
-import xml.etree.ElementTree as ET
-
-# VAST_UM_PIX = 718.5/221 # Measured Cap / expt.CapWd
-VAST_UM_PIX = 3.0636 # manually measured, head-to-tail...
+from navigate.tools.file_functions import load_yaml_file, save_yaml_file
 
 AXIS_MAPPING = ['x', 'y', 'm']
 
@@ -168,30 +161,6 @@ class VastInterfaceController(GUIController):
         except Exception as e:
             traceback.print_exc()
 
-    def set_global_origin(self):
-        # set x-origin to nose_pos
-        self.global_pixel_origin[AXIS_MAPPING[0]] = self.nose_pos
-
-        # set z-origin to top of capillary
-        self.global_pixel_origin[AXIS_MAPPING[2]] = self.find_capillary_boundary(
-            chan=self.ref_channel,
-            view=self.reference_view
-            ).max() if self.m_focus_position is None else self.m_focus_position
-
-        # set y-origin to in_focus_slice
-        # self.global_pixel_origin[AXIS_MAPPING[1]] = # self.in_focus_slice
-        self.global_pixel_origin[AXIS_MAPPING[1]] = self.curr_abs_pos_pix[AXIS_MAPPING[1]]
-
-        # grab current absolute VAST stage position: 
-        # measure everything relative to that on navigate side
-        self.store_absolute_stage_position_from_controller()
-
-        print("Absolute stage position [um]: ", self.absolute_stage_pos_um)
-        print(f"Setting pixel origin to: {self.global_pixel_origin}")
-
-        # update experiment values
-        self.update_experiment_values()
-
     def store_absolute_stage_position_from_controller(self):
         # store as a vector
         self.absolute_stage_pos_um = self.get_abs_stage_pos_um_from_controller()
@@ -222,7 +191,7 @@ class VastInterfaceController(GUIController):
             elif i == 1:
                 self.calculate_xm_pixel_size(ax)
             
-            self.update_experiment_values()
+            self.update_calibration()
 
     def set_y_calibration(self):
         # stage position [um]
@@ -238,7 +207,7 @@ class VastInterfaceController(GUIController):
 
         self.variables["y0_step"].set(y0)
 
-        self.update_experiment_values()
+        self.update_calibration()
 
     def set_theta_calibration(self):
         theta0 = int(self.curr_abs_pos_pix['theta'])
@@ -246,7 +215,7 @@ class VastInterfaceController(GUIController):
         self.global_pixel_origin['theta'] = theta0
         self.variables["theta0_step"].set(theta0)
 
-        self.update_experiment_values()
+        self.update_calibration()
 
     def calculate_xm_pixel_size(self, ax='x'):
         d_pix = self.variables[f"{ax}1_pix"].get() - self.variables[f"{ax}0_pix"].get()
@@ -285,6 +254,7 @@ class VastInterfaceController(GUIController):
         self.text_var = self.variables['text']
 
         # variables
+        self.calibration = {}
         self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.curr_abs_pos_pix = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
@@ -324,6 +294,8 @@ class VastInterfaceController(GUIController):
         self.buttons["pull_from_mp"].configure(command=self.pull_from_mp_table)       
         self.buttons["mark_position"].configure(command=self.create_new_annotated_position)
         self.buttons["query_stage"].configure(command=self.set_cursor_based_on_stage_query)
+        self.buttons["save_calib"].configure(command=self.save_calibration)
+        self.buttons["load_calib"].configure(command=self.load_calibration)
 
         self.do_projection_check.configure(command=self.draw_fish)
         self.do_color_check.configure(command=self.draw_fish)
@@ -366,9 +338,6 @@ class VastInterfaceController(GUIController):
 
         # create units vector
         self.units = vector(self.stage_axes, val=1.0)
-
-        # go ahead and load the first fish
-        # self.load_next_fish()
 
     def _canvas_scroll_event_wrapper(self, event):
         self.mousewheel_axis(self.y_scrollbar, event.step, 'y')
@@ -422,9 +391,6 @@ class VastInterfaceController(GUIController):
             self.ref_channel = self.channel_names[0]
 
         self.curr_channel_idx = 0
-
-        # the working dir will be parent of views
-        # self.working_dir = Path(self.view_names[0]).parent.resolve()
 
         # load images: [chan, view, slice]
         self.images = {}
@@ -601,22 +567,10 @@ class VastInterfaceController(GUIController):
 
     def on_click(self, event):
         if event.button == 1:
+            # just set the cursor
             self.cursor = deepcopy(self.curr_abs_pos_pix)
-
-            print(self.cursor)
-
-            # if self.setting_nose_pos:
-            #     self.nose_pos = self.curr_abs_pos_pix[AXIS_MAPPING[0]]
-            #     self.setting_nose_pos = False
-            # elif self.setting_focus_pos:
-            #     self.m_focus_position = self.curr_abs_pos_pix[AXIS_MAPPING[2]]
-            #     self.setting_focus_pos = False
-            # else:
-            #     # in pixels...
-            #     new_position = self.get_relative_position()
-            #     self.annotated_positions += [new_position]
         elif event.button == 3:
-            # remove last
+            # remove most recent annotated position
             try:
                 self.annotated_positions.pop(-1)
             except IndexError:
@@ -835,19 +789,21 @@ class VastInterfaceController(GUIController):
 
         # SET UP AXES:
         # scale axes to VAST
+        x_um_pix = self.units[AXIS_MAPPING[0]]
         res = 0.5
-        ticks = ax.get_xticks()*VAST_UM_PIX/1000
+        ticks = ax.get_xticks()*x_um_pix/1000
         n_ticks = int(ticks.max()/res)
         tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
-        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ticks = np.uint(tick_labels*1000/x_um_pix)
         ax.set_xticks(ticks)
         _ = ax.set_xticklabels(tick_labels)
 
+        y_um_pix = self.units[AXIS_MAPPING[2]]
         res = 0.25
-        ticks = ax.get_yticks()*VAST_UM_PIX/1000
+        ticks = ax.get_yticks()*y_um_pix/1000
         n_ticks = int(ticks.max()/res)
         tick_labels = np.linspace(0, res*n_ticks, n_ticks+1)
-        ticks = np.uint(tick_labels*1000/VAST_UM_PIX)
+        ticks = np.uint(tick_labels*1000/y_um_pix)
         ax.set_yticks(ticks)
         _ = ax.set_yticklabels(tick_labels)
 
@@ -959,9 +915,11 @@ class VastInterfaceController(GUIController):
 
     def pull_calib_from_experiment(self):
         
-        position_0 = vector(self.vast_experiment["Position_0"])
-        position_1 = vector(self.vast_experiment["Position_1"])
-        units      = vector(self.vast_experiment["Units"])
+        self.calibration = self.vast_experiment["Calibration"]
+
+        position_0 = vector(self.calibration["Position_0"])
+        position_1 = vector(self.calibration["Position_1"])
+        units      = vector(self.calibration["Units"])
 
         # init global origin [pix, steps]
         self.global_pixel_origin = vector(self.stage_axes, val=0.)
@@ -1002,43 +960,74 @@ class VastInterfaceController(GUIController):
         self.variables["theta0_step"].set(position_0['theta']['step'])
         self.variables["dtheta_deg_step"].set(units['theta'])      
 
-    def update_experiment_values(self):
-        try:
-            self.vast_experiment['Position_0'] = {
-                "x": {
-                    "pix": self.global_pixel_origin['x'],
-                    "um":  self.global_phys_origin['x']
-                },
-                "m": {
-                    "pix": self.global_pixel_origin['m'],
-                    "um":  self.global_phys_origin['m']
-                },
-                "y": {
-                    "step": self.global_pixel_origin['y'],
-                    "um":   self.global_phys_origin['y']
-                },
-                "theta": {
-                    "step": self.global_pixel_origin['theta']
-                }
+    def update_calibration(self):
+        self.calibration['Position_0'] = {
+            "x": {
+                "pix": self.global_pixel_origin['x'],
+                "um":  self.global_phys_origin['x']
+            },
+            "m": {
+                "pix": self.global_pixel_origin['m'],
+                "um":  self.global_phys_origin['m']
+            },
+            "y": {
+                "step": self.global_pixel_origin['y'],
+                "um":   self.global_phys_origin['y']
+            },
+            "theta": {
+                "step": self.global_pixel_origin['theta']
             }
+        }
 
-            self.vast_experiment['Position_1'] = {
-                "x": {
-                    "pix": float(self.variables["x1_pix"].get()),
-                    "um":  float(self.variables["x1_um"].get())
-                },
-                "m": {
-                    "pix": float(self.variables["m1_pix"].get()),
-                    "um":  float(self.variables["m1_um"].get())
-                }                       
-            }
+        self.calibration['Position_1'] = {
+            "x": {
+                "pix": float(self.variables["x1_pix"].get()),
+                "um":  float(self.variables["x1_um"].get())
+            },
+            "m": {
+                "pix": float(self.variables["m1_pix"].get()),
+                "um":  float(self.variables["m1_um"].get())
+            }                       
+        }
 
-            self.vast_experiment['Units'] = {ax: float(val) for ax, val in self.units.items()}
-        except Exception as e:
-            print("Error:", e)
-            traceback.print_exc()
+        self.calibration['Units'] = {ax: float(val) for ax, val in self.units.items()}
+
+        # Update in experiment
+        self.vast_experiment["Calibration"] = self.calibration
 
         # redraw fish
+        self.draw_fish()
+
+    def save_calibration(self):
+        
+        default_name = f"{Path(self.well).name.lower()}_calib"
+
+        full_path = filedialog.asksaveasfilename(
+            initialfile=default_name,
+            initialdir=self.well,
+            defaultextension=".yml",
+            filetypes=[("YAML", "*.yml")]
+            )
+
+        save_yaml_file(
+            file_directory=Path(full_path).parent,
+            content_dict=self.calibration,
+            filename=Path(full_path).name
+        )
+
+    def load_calibration(self):
+        
+        full_path = filedialog.askopenfile(
+            initialdir=self.well,
+            defaultextension=".yml",
+            filetypes=[("YAML", "*.yml")]            
+        ).name
+
+        self.vast_experiment["Calibration"] = load_yaml_file(full_path)
+
+        self.pull_calib_from_experiment()
+
+        # redraw
         self.draw_fish()
 
     def parse_well(self, well):
