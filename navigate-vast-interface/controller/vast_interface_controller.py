@@ -942,7 +942,22 @@ class VastInterfaceController(GUIController):
 
     def pull_calib_from_experiment(self):
         
-        self.calibration = self.vast_experiment["Calibration"]
+        self.calibration = self.vast_experiment.get(
+            "Calibration",
+            {
+                "Position_0": {
+                    "x":     {"pix": 0,  "um": 0.0},
+                    "m":     {"pix": 0,  "um": 0.0},
+                    "y":     {"step": 0, "um": 0.0},
+                    "theta": {"step": 0}
+                    },
+                "Position_1": {
+                    "x":     {"pix": 0,  "um": 0.0},
+                    "m":     {"pix": 0,  "um": 0.0},
+                    },
+                "Units": {ax: 1.0 for ax in self.stage_axes}           
+            }
+            )
 
         position_0 = vector(self.calibration["Position_0"])
         position_1 = vector(self.calibration["Position_1"])
