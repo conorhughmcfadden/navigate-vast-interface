@@ -472,6 +472,8 @@ class VastInterfaceController(GUIController):
             for scroll in widget.inputs.values():
                 scroll.configure(command=lambda *args: self.draw_fish())
 
+            widget.bind("<<ColorChanged>>", lambda event: self.draw_fish())
+
     def find_capillary_boundary(self, chan="", view=0):
         im = self.projections[chan][view]
 
@@ -811,9 +813,13 @@ class VastInterfaceController(GUIController):
         if do_color:
             im_rgb = np.zeros((3,) + image_to_display.shape)
 
-            im_rgb[0] = 0.3*process(0) + 0.7*process(2)
-            im_rgb[1] = 0.3*process(0) + 0.7*process(1)
-            im_rgb[2] = 0.3*process(0)
+            for c_idx, chan_name in enumerate(self.channel_names):
+                color = self.color_settings[chan_name]["color"]
+                intensity = process(c_idx)
+                for k in range(3):
+                    im_rgb[k] += color[k]*intensity
+
+            im_rgb = np.clip(im_rgb, a_min=0.0, a_max=1.0)
 
             disp_image = np.moveaxis(im_rgb, 0, -1)
             self.current_display_image = disp_image

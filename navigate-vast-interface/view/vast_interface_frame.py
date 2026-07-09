@@ -2,6 +2,7 @@
 # Standard Imports
 import tkinter as tk
 from tkinter import ttk
+from tkinter import colorchooser
 import numpy as np
 
 #Third-party Imports
@@ -63,13 +64,14 @@ class FishWidget:
         self.inset_ax.set_position([left, bottom, width, height])
 
 class ColorChannelWidget(ttk.Frame):
-    def __init__(self, master: ttk.Frame, name: str="Channel"):
+    def __init__(self, master: ttk.Frame, name: str="Channel", default_color: tuple[int]=(255, 255, 255)):
         super().__init__(master)
 
         self.variables = {
             "brightness": tk.DoubleVar(value=1.0),
             "gamma": tk.DoubleVar(value=1.0),
-            "min": tk.DoubleVar(value=0.0)
+            "min": tk.DoubleVar(value=0.0),
+            "color": [c/255 for c in default_color]
         }
 
         self.ranges = {
@@ -80,28 +82,48 @@ class ColorChannelWidget(ttk.Frame):
 
         self.inputs = {}
 
-        self.label = tk.Label(self, text=name)
+        self.label = tk.Label(self, text=name, bg=self._to_hex(default_color))
         self.label.pack(fill=tk.X, side=tk.TOP)
+        self.label.bind("<Button-1>", self.pick_color)
 
-        for key, var in self.variables.items():
+        for key, (from_, to_) in self.ranges.items():
             scroll_frame = ttk.Frame(self, relief=tk.SUNKEN)
 
             label = ttk.Label(scroll_frame, text=f"{key.upper()}: ", width=20)
             label.pack(side=tk.LEFT)
 
-            from_, to_ = self.ranges[key]
             self.inputs[key] = ttk.Scale(
                 scroll_frame,
                 from_=from_,
                 to=to_,
                 orient=tk.HORIZONTAL,
-                variable=var
+                variable=self.variables[key]
             )
             self.inputs[key].pack(fill=tk.X, side=tk.LEFT, expand=True)
 
             scroll_frame.pack(fill=tk.X, side=tk.TOP)
 
         self.pack(fill=tk.X, side=tk.TOP)
+
+    @staticmethod
+    def _to_hex(rgb):
+        return "#{:02x}{:02x}{:02x}".format(*(int(c) for c in rgb))
+
+    def pick_color(self, event=None):
+        initial = tuple(round(c*255) for c in self.variables["color"])
+        rgb, hex_color = colorchooser.askcolor(
+            color=self._to_hex(initial),
+            title=f"{self.label['text']} color"
+        )
+
+        if rgb is None:
+            return
+
+        self.variables["color"] = [c/255 for c in rgb]
+        self.label.configure(bg=hex_color)
+
+        # notify any listeners (e.g. the controller) that the color changed
+        self.event_generate("<<ColorChanged>>")
 
 class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
@@ -356,18 +378,31 @@ class VastInterfaceFrame(ttk.Frame):
 
     def create_color_channel_widgets(self, channels: list[str]):
 
-        color_channels_frame = ttk.Frame(self.color_tab)
+        # clear out any widgets left over from a previously loaded fish
+        if hasattr(self, "color_channels_frame"):
+            self.color_channels_frame.destroy()
+
+        self.color_channels_frame = ttk.Frame(self.color_tab)
+        color_channels_frame = self.color_channels_frame
+
+        default_colors = [
+            (255, 255, 255),  # white
+            (0, 255, 0),      # green
+            (255, 0, 0),      # red
+        ]
 
         self.channel_widgets = {}
-        for channel_name in channels:
+        for idx, channel_name in enumerate(channels):
+            default_color = default_colors[idx] if idx < len(default_colors) else (255, 255, 255)
             widget = ColorChannelWidget(
                 color_channels_frame,
-                channel_name
+                channel_name,
+                default_color=default_color
             )
 
             self.channel_widgets[channel_name] = widget
 
-        color_channels_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)   
+        color_channels_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     # Getters
     def get_variables(self):
