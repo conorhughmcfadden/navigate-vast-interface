@@ -62,6 +62,47 @@ class FishWidget:
 
         self.inset_ax.set_position([left, bottom, width, height])
 
+class ColorChannelWidget(ttk.Frame):
+    def __init__(self, master: ttk.Frame, name: str="Channel"):
+        super().__init__(master)
+
+        self.variables = {
+            "brightness": tk.DoubleVar(value=1.0),
+            "gamma": tk.DoubleVar(value=1.0),
+            "min": tk.DoubleVar(value=0.0)
+        }
+
+        self.ranges = {
+            "brightness": (0.0, 2.0),
+            "gamma": (0.0, 2.0),
+            "min": (0, 0.5)
+        }
+
+        self.inputs = {}
+
+        self.label = tk.Label(self, text=name)
+        self.label.pack(fill=tk.X, side=tk.TOP)
+
+        for key, var in self.variables.items():
+            scroll_frame = ttk.Frame(self, relief=tk.SUNKEN)
+
+            label = ttk.Label(scroll_frame, text=f"{key.upper()}: ", width=20)
+            label.pack(side=tk.LEFT)
+
+            from_, to_ = self.ranges[key]
+            self.inputs[key] = ttk.Scale(
+                scroll_frame,
+                from_=from_,
+                to=to_,
+                orient=tk.HORIZONTAL,
+                variable=var
+            )
+            self.inputs[key].pack(fill=tk.X, side=tk.LEFT, expand=True)
+
+            scroll_frame.pack(fill=tk.X, side=tk.TOP)
+
+        self.pack(fill=tk.X, side=tk.TOP)
+
 class VastInterfaceFrame(ttk.Frame):
     """Plugin Frame: Just an example
 
@@ -259,7 +300,12 @@ class VastInterfaceFrame(ttk.Frame):
         self.buttons["load_calib"] = tk.Button(calib_tab, text="LOAD")
         self.buttons["load_calib"].pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # bottom frame: utility tools frame
+        # | ----------- COLOR TAB ----------- |
+
+        self.color_tab = ttk.Frame(self.control_notebook)
+        self.control_notebook.add(self.color_tab, text="COLOR")     
+
+        # | ----------- BOTTOM: UTILITY TOOLS ----------- |
         util_frame = ttk.Frame(self)
 
         # load specific well
@@ -307,6 +353,21 @@ class VastInterfaceFrame(ttk.Frame):
         )
 
         util_frame.pack()
+
+    def create_color_channel_widgets(self, channels: list[str]):
+
+        color_channels_frame = ttk.Frame(self.color_tab)
+
+        self.channel_widgets = {}
+        for channel_name in channels:
+            widget = ColorChannelWidget(
+                color_channels_frame,
+                channel_name
+            )
+
+            self.channel_widgets[channel_name] = widget
+
+        color_channels_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)   
 
     # Getters
     def get_variables(self):

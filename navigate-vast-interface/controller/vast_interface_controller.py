@@ -417,6 +417,9 @@ class VastInterfaceController(GUIController):
                 stack = self.load_stack(view, chan)
                 self.images[chan].append(stack)
 
+        # create color channel widgets
+        self.init_channel_controls()
+
         # store stack dimensions
         self.n_slices, self.l, self.w = self.images[self.channel_names[0]][0].shape
 
@@ -456,6 +459,18 @@ class VastInterfaceController(GUIController):
 
         # first draw
         self.draw_fish()
+
+    def init_channel_controls(self):
+
+        # create tk widgets
+        self.view.create_color_channel_widgets(self.channel_names)
+
+        self.color_settings = {}
+        for key, widget in self.view.channel_widgets.items():
+            self.color_settings[key] = widget.variables
+
+            for scroll in widget.inputs.values():
+                scroll.configure(command=lambda *args: self.draw_fish())
 
     def find_capillary_boundary(self, chan="", view=0):
         im = self.projections[chan][view]
@@ -771,47 +786,42 @@ class VastInterfaceController(GUIController):
         # store the current image used by the display for ROI extraction
         self.current_display_image = image_to_display
 
-        # TODO: Very hacky and unoptimized...
-        # gamma
-        gm = [
-            0.85,
-            0.65,
-            0.45
-        ]
-        cl = [
-            [0.05, 1.05],
-            [0.05, 0.3],
-            [0.10, 0.4]
-        ]
-        def gamma(c_idx: int):
-            if do_projection:
-                im = self.projections[self.channel_names[c_idx]][v_idx]
-            else:
-                im = self.images[self.channel_names[c_idx]][v_idx][y_idx]
-            # gamma
-            im = np.power(im/65535, gm[c_idx])
-            # clip
-            mi, mx = cl[c_idx]
-            im = np.clip(im, a_min=mi, a_max=mx)
-            # rescale
-            im = (im - mi) / (mx - mi)
+        def process(c_idx: int):
+            chan_name = self.channel_names[c_idx]
+            settings = self.color_settings[chan_name]
+            gamma_val = settings["gamma"].get()
+            brightness_val = settings["brightness"].get()
+            min_val = settings["min"].get()
 
-            return im
-            
+            if do_projection:
+                im = self.projections[chan_name][v_idx]
+            else:
+                im = self.images[chan_name][v_idx][y_idx]
+
+            # gamma correction
+            im = np.power(im/65535, gamma_val)
+            # brightness
+            im *= brightness_val
+            # min threshold
+            im[im < min_val] = 0.0
+
+            # always clip
+            return np.clip(im, a_min=0.0, a_max=1.0)    
+
         if do_color:
             im_rgb = np.zeros((3,) + image_to_display.shape)
 
-            im_rgb[0] = 0.3*gamma(0) + 0.7*gamma(2)
-            im_rgb[1] = 0.3*gamma(0) + 0.7*gamma(1)
-            im_rgb[2] = 0.3*gamma(0)
+            im_rgb[0] = 0.3*process(0) + 0.7*process(2)
+            im_rgb[1] = 0.3*process(0) + 0.7*process(1)
+            im_rgb[2] = 0.3*process(0)
 
             disp_image = np.moveaxis(im_rgb, 0, -1)
             self.current_display_image = disp_image
             ax.imshow(disp_image)
         else:
-            disp_image = np.power(image_to_display, gm[self.curr_channel_idx])
+            disp_image = process(self.curr_channel_idx)
             self.current_display_image = disp_image
-            ax.imshow(disp_image, cmap='gray')
+            ax.imshow(disp_image, cmap='gray', vmin=0.0, vmax=1.0)
         
 
         # SET UP AXES:
