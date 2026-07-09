@@ -166,6 +166,9 @@ class VastInterfaceController(GUIController):
         self.absolute_stage_pos_um = self.get_abs_stage_pos_um_from_controller()
 
     def get_abs_stage_pos_um_from_controller(self):
+        if self.parent_controller is None:
+            return vector(self.stage_axes, val=0.0)
+
         # stop_stage: refresh ax_pos in experiment
         self.parent_controller.stop_stage()
 
@@ -228,11 +231,14 @@ class VastInterfaceController(GUIController):
 
     def initialize(self):
         # try to get the VAST field in Experiment, else create it
-        try:
-            self.vast_experiment = self.parent_controller.model.configuration['experiment']['VAST']
-        except KeyError:
-            self.parent_controller.model.configuration['experiment']['VAST'] = {}
-            self.initialize()
+        if self.parent_controller is None:
+            self.vast_experiment = {}
+        else:
+            try:
+                self.vast_experiment = self.parent_controller.model.configuration['experiment']['VAST']
+            except KeyError:
+                self.parent_controller.model.configuration['experiment']['VAST'] = {}
+                self.initialize()
 
         self.variables = self.view.get_variables()
         self.widgets = self.view.get_widgets()
@@ -255,7 +261,12 @@ class VastInterfaceController(GUIController):
 
         # variables
         self.calibration = {}
-        self.stage_axes = self.parent_controller.configuration_controller.stage_axes
+        if self.parent_controller is None:
+            # no parent controller (standalone/dev mode): use the axes this
+            # plugin actually needs since there's no configuration to read them from
+            self.stage_axes = ['x', 'y', 'm', 'theta']
+        else:
+            self.stage_axes = self.parent_controller.configuration_controller.stage_axes
         self.curr_abs_pos_pix = vector(self.stage_axes, val=0.)
         self.annotated_positions = []
         self.well = None
@@ -365,6 +376,8 @@ class VastInterfaceController(GUIController):
         self.load_next_fish(well)
 
     def pull_from_mp_table(self):
+        if self.parent_controller is None:
+            return
 
         multi_positions = self.parent_controller.multiposition_tab_controller.get_positions()
 
@@ -703,6 +716,8 @@ class VastInterfaceController(GUIController):
         self.draw_fish()
 
     def update_multiposition_controller(self, multi_positions):
+        if self.parent_controller is None:
+            return
         self.parent_controller.model.configuration["multi_positions"] = multi_positions
         self.parent_controller.multiposition_tab_controller.set_positions(multi_positions)
 
@@ -1100,3 +1115,25 @@ class VastInterfaceController(GUIController):
         chans = {chan.split('_')[-2] for chan in files if ".tif" in chan}
 
         return sorted(chans), sorted(views)
+
+
+if __name__ == "__main__":
+    # Standalone launcher for development: runs the plugin outside of Navigate,
+    # so changes can be tested without going through Navigate's Plugins menu.
+    import importlib.util
+    import tkinter as tk
+
+    view_path = Path(__file__).parent.parent / "view" / "vast_interface_frame.py"
+    spec = importlib.util.spec_from_file_location("vast_interface_frame", view_path)
+    vast_interface_frame = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vast_interface_frame)
+
+    root = tk.Tk()
+    root.title("VAST Interface (standalone)")
+
+    view = vast_interface_frame.VastInterfaceFrame(root)
+    view.pack(fill=tk.BOTH, expand=True)
+
+    controller = VastInterfaceController(view)
+
+    root.mainloop()
